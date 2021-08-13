@@ -65,7 +65,9 @@ defmodule History do
     Invokes the command at index 'i'.
   """
   def x(i) do
-    send(self(), {:eval, Process.info(self())[:dictionary][:iex_server], get_history_item(i), %IEx.State{}})
+    cmd = get_history_item(i)
+    send(self(), {:eval, Process.info(self())[:dictionary][:iex_server], cmd, %IEx.State{}})
+    :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(cmd)])
     :ok
   end
 
