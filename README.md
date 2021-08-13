@@ -1,2 +1,2 @@
 # history
-Simple, if not a bit hacky module to maintain shell history between sessions.
+Saves history between shell sessions. Allows the user to display history, and re-issue historic commands.
