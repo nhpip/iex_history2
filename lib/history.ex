@@ -33,6 +33,7 @@ defmodule History do
       --erl "-kernel shell_history enabled"
   """
 
+  @save_replayed_commands true
   @disk_log_tag :"$#group_history"
   @module_name String.trim_leading(Atom.to_string(__MODULE__) <> ".", "Elixir.")
 
@@ -73,7 +74,7 @@ defmodule History do
   def x(i) do
     cmd = get_history_item(i)
     send(self(), {:eval, Process.info(self())[:dictionary][:iex_server], cmd, %IEx.State{}})
-    :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(cmd)])
+    if @save_replayed_commands, do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(cmd)])
     :ok
   end
 
