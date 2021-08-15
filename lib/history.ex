@@ -73,6 +73,7 @@ defmodule History do
   """
   def x(i) do
     cmd = get_history_item(i)
+    ## This is maybe a little bit hacky...
     send(self(), {:eval, Process.info(self())[:dictionary][:iex_server], cmd, %IEx.State{}})
     if @save_replayed_commands, do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(cmd)])
     :ok
