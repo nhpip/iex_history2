@@ -70,7 +70,7 @@ Invokes the command at index 'i'.
 Clears the history and bindings. 
 ```
 
-### History.initialize(opts \\ [])
+### History.initialize(opts)
 ```
 Initializes the History app. Takes the following parameters:
 
@@ -87,4 +87,13 @@ Initializes the History app. Takes the following parameters:
           variable: :green
         ]
       ]
+```
+
+### History.state()
+```
+Displays the current state:
+
+    History version 2.0 is eenabled:
+      Current history is 199 commands in size.
+      Current bindings are 153 variables in size.
 ```
