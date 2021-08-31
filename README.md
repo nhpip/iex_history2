@@ -97,3 +97,14 @@ Displays the current state:
       Current history is 199 commands in size.
       Current bindings are 153 variables in size.
 ```
+
+### History.clear()
+```
+Clears the history. If scope is  :global the IEx session needs restarting for
+the changes to take effect.
+```
+
+### History.stop_clear()
+```
+Clears the history and stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
+```
