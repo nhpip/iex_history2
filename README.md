@@ -67,8 +67,7 @@ Invokes the command at index 'i'.
 
 ### History.clear()
 ```
-Clears the history. The IEx session needs restarting for the changes to take
-effect.
+Clears the history and bindings. 
 ```
 
 ### History.initialize(opts \\ [])
