@@ -106,5 +106,6 @@ the changes to take effect.
 
 ### History.stop_clear()
 ```
-Clears the history and stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
+Clears the history and stops the service. If scope is :global the IEx session needs 
+restarting for the changes to take effect.
 ```
