@@ -332,7 +332,7 @@ defmodule History.Events do
   defp do_save_traced_command("", _shell_pid, _process_info), do: :ok
 
   defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true} = process_info) do
-    do_not_save = String.starts_with?(command, History.module_name())
+    do_not_save = String.starts_with?(command, [History.module_name(), "h(" <> History.module_name()])
     case Map.get(process_info, shell_pid) do
       _ when do_not_save == true ->
         :ok

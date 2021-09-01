@@ -74,7 +74,7 @@ defmodule History do
   """
 
   @version "2.0"
-  @module_name String.trim_leading(Atom.to_string(__MODULE__) <> ".", "Elixir.")
+  @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
