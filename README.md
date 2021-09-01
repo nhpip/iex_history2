@@ -10,11 +10,14 @@ For ease History can be enabled in `~/.iex.exs` for example:
     Code.append_path("~/github/history/_build/dev/lib/history/ebin")
     History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
+Of course `Code.append_path` may not be required depending on how the project is imported.
+
 The following options can be set:
 
     [
       scope: :local,
       history_limit: :infinity,
+      hide_history_commands: true,
       show_date: true,
       save_bindings: true,
       colors: [
@@ -25,6 +28,10 @@ The following options can be set:
         variable: :green
       ]
     ]
+    
+:hide_history_commands  This will prevent all calls to History.* from been saved.
+
+NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
 
 `scope` can be one of `:local, :global` or a `node()` name
 
