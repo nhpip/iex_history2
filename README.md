@@ -78,7 +78,7 @@ If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on th
 If `scope` is `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
 Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
-``
+```
     export ERL_AFLAGS="-kernel shell_history enabled"
 
     --erl "-kernel shell_history enabled"
