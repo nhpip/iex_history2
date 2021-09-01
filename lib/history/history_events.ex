@@ -36,11 +36,11 @@ defmodule History.Events do
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     if scope != :global do
-      Application.put_env(:kernel, :shell_history, :disabled)
+      set_group_history(:disabled)
       History.persistence_mode(scope) |> do_initialize()
       config
     else
-      Application.put_env(:kernel, :shell_history, :enabled)
+      set_group_history(:enabled)
       config
     end
   end
@@ -179,6 +179,9 @@ defmodule History.Events do
 
   defp color(what), do:
     History.get_color_code(what)
+
+  defp set_group_history(state), do:
+    :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
 
   defp do_get_history(:global) do
     hide_string = if History.configuration(:hide_history_commands, true),
