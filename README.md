@@ -30,14 +30,14 @@ The following options can be set:
       ]
     ]
     
-:hide_history_commands  This will prevent all calls to History.* from been saved.
+`:hide_history_commands` This will prevent all calls to History.* from been saved.
 
 NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
-:prepend_identifiers  If this is enabled it will prepend identifiers when a
-call to x = History(val) is issued.
+
+`:prepend_identifiers`  If this is enabled it will prepend identifiers when a call to x = History(val) is issued.
 
 For example:
-
+```
     enabled:
         iex> time = Time.utc_now().second
         14
@@ -67,26 +67,22 @@ For example:
         iex> History.h
         1: 2021-09-01 17:17:43: time = Time.utc_now().second
         2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
+```
 
-`scope` can be one of `:local, :global` or a `node()` name
+`:scope` can be one of `:local, :global` or a `node()` name
 
-If `scope` is `:local` (the default) history will be active on all shells, even
-those that are remotely connected, but the history for each shell will be
-unique
+If `s:cope` is `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
 
-If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on that
-shell
+If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on that shell
 
-If `scope` is `:global` history will be shared between all shells. However the
-saving of variable bindings will be disabled along with the date/time in
-history
+If `scope` is `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
-Furthermore, if a `scope` of `:global` is selected following kernel option must be
-set, either directly as VM options or via an environment variable:
-
+Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
+``
     export ERL_AFLAGS="-kernel shell_history enabled"
 
     --erl "-kernel shell_history enabled"
+```
 
 ## Functions
 
