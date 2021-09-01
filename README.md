@@ -92,12 +92,40 @@ set, either directly as VM options or via an environment variable:
 
 ### History.h()
 Displays the entire history.
+```
+    iex> History.h()
+    1: 2021-09-01 17:29:27: time = Time.utc_now().second
+    2: 2021-09-01 17:29:31: time = Time.utc_now().second
+    3: 2021-09-01 17:29:36: time
+    4: 2021-09-01 17:29:41: new_time
+    5: 2021-09-01 17:50:10: Process.info self
+    6: 2021-09-01 17:50:33: r = o
+    7: 2021-09-01 17:52:36: Process.get(:iex_history)
+```
 
 ### History.h(val)
 If the argument is a string it displays the history that contain or match entirely the passed argument. If the argument is an integer it displays the command at that index.
+```
+    iex> History.h(2)
+    2: 2021-09-01 17:29:31: time = Time.utc_now().second
+    
+    iex> History.h("Applic")
+    34: 2021-09-01 18:10:39: Application.put_env(:kernel, :shell_history, :disabled)
+    41: 2021-09-01 18:11:30: Application.get_env(:kernel, :shell_history)
+    48: 2021-09-01 18:14:02: Application.put_env(:kernel, :shell_history, 0)
+    101: 2021-09-01 19:01:15: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :disabled])
+    103: 2021-09-01 19:01:30: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :enabled])
+```
 
 ### History.x(idx)
 Invokes the command at index 'i'.
+```
+    iex> History.h(114)
+    114: 2021-09-01 19:30:14: Enum.count([1, 2, 3])
+    
+    iex> History.x(114)
+    3
+```
 
 ### History.clear()
 Clears the history and bindings. 
