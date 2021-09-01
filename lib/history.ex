@@ -34,7 +34,7 @@ defmodule History do
       Code.append_path("~/github/history/_build/dev/lib/history/ebin")
       History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
-    Of course  #{IO.ANSI.cyan()}Code.append_path #{IO.ANSI.white()} may not be required depending on how the project is imported.
+    Of course #{IO.ANSI.cyan()}Code.append_path #{IO.ANSI.white()} may not be required depending on how the project is imported.
 
     The following options can be set:
 
