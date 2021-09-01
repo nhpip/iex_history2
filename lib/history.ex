@@ -34,6 +34,8 @@ defmodule History do
       Code.append_path("~/github/history/_build/dev/lib/history/ebin")
       History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
+    Of course  #{IO.ANSI.cyan()}Code.append_path #{IO.ANSI.white()} may not be required depending on how the project is imported.
+
     The following options can be set:
 
       [
@@ -50,6 +52,11 @@ defmodule History do
           variable: :green
         ]
       ]
+
+    #{IO.ANSI.cyan()}:hide_history_commands #{IO.ANSI.white()} This will prevent all calls to #{IO.ANSI.cyan()}History.*#{IO.ANSI.white()} from been saved.
+
+    NOTE: #{IO.ANSI.cyan()}History.x/1#{IO.ANSI.white()} is always hidden. Scope of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} will only hide them from output, otherwise they will not be saved.
+
 
     #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} can be one of #{IO.ANSI.cyan()}:local, :global #{IO.ANSI.white()}or a #{IO.ANSI.cyan()}node name#{IO.ANSI.white()}
 
