@@ -56,31 +56,20 @@ set, either directly as VM options or via an environment variable:
 ## Functions
 
 ### History.h()
-```
 Displays the entire history.
-```
 
 ### History.h(val)
-```
-If the argument is a string it displays the history that contain or match
-entirely the passed argument. If the argument is an integer it displays the
-command at that index.
-```
+If the argument is a string it displays the history that contain or match entirely the passed argument. If the argument is an integer it displays the command at that index.
 
 ### History.x(idx)
-```
 Invokes the command at index 'i'.
-```
 
 ### History.clear()
-```
 Clears the history and bindings. 
-```
 
 ### History.initialize(opts)
-```
 Initializes the History app. Takes the following parameters:
-
+```
       [
         scope: :local,
         history_limit: :infinity,
@@ -97,22 +86,15 @@ Initializes the History app. Takes the following parameters:
 ```
 
 ### History.state()
-```
 Displays the current state:
-
+```
     History version 2.0 is eenabled:
       Current history is 199 commands in size.
       Current bindings are 153 variables in size.
 ```
 
 ### History.clear()
-```
-Clears the history. If scope is  :global the IEx session needs restarting for
-the changes to take effect.
-```
+Clears the history. If scope is  :global the IEx session needs restarting for the changes to take effect.
 
 ### History.stop_clear()
-```
-Clears the history and stops the service. If scope is :global the IEx session needs 
-restarting for the changes to take effect.
-```
+Clears the history and stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
