@@ -261,7 +261,12 @@ defmodule History do
       :history_limit
       :hide_history_commands,
       :prepend_identifiers,
-      :save_bindings
+      :save_bindings,
+      :colors
+
+  Examples:
+      History.configure(:colors, [index: :blue])
+      History.configure(:prepend_identifiers, true)
   """
   @spec configure(Atom.t(), any) :: atom
   def configure(kry, val)
@@ -308,11 +313,8 @@ defmodule History do
     end
   end
 
-  @doc """
-    Allows the colors to be changed, but not saved
-  """
-  def configure(:colors, item, value) do
-    new_colors = List.keyreplace(configuration(:colors, []), item, 0, {item ,value})
+  def configure(:colors, keyword_list) do
+    new_colors = Keyword.merge(configuration(:colors, []), keyword_list)
     new_config = List.keyreplace(configuration(), :colors, 0, {:colors, new_colors})
     Process.put(:history_config, new_config)
     configuration()
