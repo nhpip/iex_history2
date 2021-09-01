@@ -26,9 +26,10 @@ defmodule History.Events do
 
   @size_check_interval 60 * 1000
   @table_limit_exceeded_factor 0.1
-  @infinity_limit 2000  # So dets doesn't get too big, may find a better way
+  @infinity_limit 3000  # So dets doesn't get too big, may find a better way
   @store_name "store_history_events"
   @tracer_reg_name :history_tracer_handler
+  @random_string "adarwerwvwvevwwerxrwfx"
 
   @doc false
   def initialize(config) do
@@ -179,9 +180,13 @@ defmodule History.Events do
     History.get_color_code(what)
 
   defp do_get_history(:global) do
+    hide_string = if History.configuration(:hide_history_commands, true),
+                      do: History.module_name(),
+                      else: @random_string
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.module_name()) end)
+    |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, History.exec_name()) end)
+    |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
 
@@ -190,7 +195,6 @@ defmodule History.Events do
     History.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
     |> Enum.map(fn({date, cmd}) -> {unix_to_date(date), String.trim(cmd)} end)
-    |> Enum.filter(fn({_, cmd}) -> not String.contains?(cmd, History.module_name()) end)
   end
 
   defp init_stores(scope, my_node) do
@@ -213,12 +217,13 @@ defmodule History.Events do
 
   defp do_start_tracer_service(shell_pid) do
     scope = History.configuration(:scope, :local)
+    hide_history_cmds = History.configuration(:hide_history_commands, true)
     real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
     spawn(fn ->
       Process.register(self(), @tracer_reg_name)
       send(shell_pid, :started)
       Process.send_after(self(), :size_check, @size_check_interval)
-      tracer_loop(%{scope: scope, store_count: 0, limit: real_limit})
+      tracer_loop(%{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit})
     end)
     wait_rsp(:started)
   end
@@ -255,6 +260,9 @@ defmodule History.Events do
         new_process_info = %{process_info | limit: new_value}
         apply_table_limits(new_process_info)
         tracer_loop(new_process_info)
+
+      {:hide_history_commands, value} ->
+        tracer_loop(%{process_info | hide_history_commands: value})
 
       {:DOWN, _, :process, shell_pid, :noproc} ->
         case Map.get(process_info, shell_pid) do
@@ -323,8 +331,23 @@ defmodule History.Events do
 
   defp do_save_traced_command("", _shell_pid, _process_info), do: :ok
 
-  defp do_save_traced_command(command, shell_pid, process_info) do
+  defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true} = process_info) do
+    do_not_save = String.starts_with?(command, History.module_name())
     case Map.get(process_info, shell_pid) do
+      _ when do_not_save == true ->
+        :ok
+      data when is_map(data) ->
+        History.Store.save_data(data.store_name, {System.os_time(:second), command})
+      _ ->
+        :ok
+    end
+  end
+
+  defp do_save_traced_command(command, shell_pid, process_info) do
+    do_not_save = String.starts_with?(command, History.exec_name())
+    case Map.get(process_info, shell_pid) do
+      _ when do_not_save == true ->
+        :ok
       data when is_map(data) ->
         History.Store.save_data(data.store_name, {System.os_time(:second), command})
       _ ->

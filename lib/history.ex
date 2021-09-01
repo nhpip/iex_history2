@@ -39,6 +39,7 @@ defmodule History do
       [
         scope: :local,
         history_limit: :infinity,
+        hide_history_commands: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -66,10 +67,11 @@ defmodule History do
   """
 
   @version "2.0"
-  @module_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
+  @module_name String.trim_leading(Atom.to_string(__MODULE__) <> ".", "Elixir.")
+  @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
-  @default_config [scope: :local, history_limit: :infinity, show_date: true, save_bindings: true, colors: @default_colors]
+  @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, show_date: true, save_bindings: true, colors: @default_colors]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -77,6 +79,7 @@ defmodule History do
       [
         scope: :local,
         history_limit: :infinity,
+        hide_history_commands: true.
         show_date: true,
         save_bindings: true,
         colors: [
@@ -165,7 +168,8 @@ defmodule History do
   end
 
   @doc """
-    Clears the history. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()} :global#{IO.ANSI.white()} the IEx session needs restarting for the changes to take effect.
+    Clears the history. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
+    the IEx session needs restarting for the changes to take effect.
   """
   def clear() do
     History.Events.clear()
@@ -208,6 +212,7 @@ defmodule History do
     Allows the following options to be changed, but not saved:
       :show_date
       :history_limit
+      :hide_history_commands,
       :save_bindings
   """
   @spec configure(Atom.t(), any) :: atom
@@ -215,6 +220,13 @@ defmodule History do
 
   def configure(:show_date, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :show_date, 0, {:show_date, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
+  def configure(:hide_history_commands, value) when value in [true, false] do
+    new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
+    History.Events.send_msg({:hide_history_commands, value})
     Process.put(:history_config, new_config)
     configuration()
   end
@@ -265,6 +277,9 @@ defmodule History do
 
   @doc false
   def module_name(), do: @module_name
+
+  @doc false
+  def exec_name(), do: @exec_name
 
   @doc false
   def configuration(item, default), do:
