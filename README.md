@@ -18,6 +18,7 @@ The following options can be set:
       scope: :local,
       history_limit: :infinity,
       hide_history_commands: true,
+      prepend_identifiers: true,
       show_date: true,
       save_bindings: true,
       colors: [
@@ -32,6 +33,40 @@ The following options can be set:
 :hide_history_commands  This will prevent all calls to History.* from been saved.
 
 NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
+:prepend_identifiers  If this is enabled it will prepend identifiers when a
+call to x = History(val) is issued.
+
+For example:
+
+    enabled:
+        iex> time = Time.utc_now().second
+        14
+        iex> new_time = History.x(1)
+        22
+
+        iex> new_time
+        22                  # New time is assigned to variable time
+        iex> time
+        13                  # However, the original date variable is unchanged
+
+        iex> History.h()
+        1: 2021-09-01 17:13:13: time = Time.utc_now().second
+        2: 2021-09-01 17:13:22: new_time =  time = Time.utc_now().second    # We see the binding to new_time
+
+      disabled:
+        iex> time = Time.utc_now().second
+        43
+        iex> new_time = History.x(1)
+        50
+
+        iex> new_time       # New time is assigned to variable time
+        50
+        iex> time
+        50                  # However, this time the original time variable has also unchanged
+
+        iex> History.h
+        1: 2021-09-01 17:17:43: time = Time.utc_now().second
+        2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
 
 `scope` can be one of `:local, :global` or a `node()` name
 
@@ -73,6 +108,7 @@ Initializes the History app. Takes the following parameters:
       [
         scope: :local,
         history_limit: :infinity,
+        prepend_identifiers: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -94,7 +130,32 @@ Displays the current state:
 ```
 
 ### History.clear()
-Clears the history. If scope is  :global the IEx session needs restarting for the changes to take effect.
+Clears the history and bindings. If scope is  :global the IEx session needs restarting for the changes to take effect.
 
 ### History.stop_clear()
-Clears the history and stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
+Clears the history and bindings then stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
+
+### History.configuration()
+Displays the current conifuration
+
+### History.configure/2
+Allows the following options to be changed, but not saved:
+```
+    :show_date
+    :history_limit
+    :hide_history_commands,
+    :prepend_identifiers,
+    :save_bindings,
+    :colors
+ ```   
+Examples:
+```
+    History.configure(:colors, [index: :blue])
+    History.configure(:prepend_identifiers, true)
+```
+
+### History.get_bindings()
+Displays the current shell bindings.
+
+### History.is_enabled?()
+Returns true or false is History is enabled
