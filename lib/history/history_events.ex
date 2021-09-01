@@ -31,6 +31,7 @@ defmodule History.Events do
   @tracer_reg_name :history_tracer_handler
   @random_string "adarwerwvwvevwwerxrwfx"
 
+
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
@@ -185,7 +186,7 @@ defmodule History.Events do
                       else: @random_string
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, History.exec_name()) end)
+    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) end)
     |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
@@ -205,51 +206,53 @@ defmodule History.Events do
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
     server_node = :erlang.node(:erlang.group_leader())
-    %{store_name: store_name, store_filename: store_filename, node: server_node, size: 0}
+    %{store_name: store_name, store_filename: store_filename, node: server_node, size: 0, prepend_ids: nil}
   end
 
-  defp start_tracer_service(db_config) do
+  defp start_tracer_service(shell_config) do
     if Process.whereis(@tracer_reg_name) == nil do
       do_start_tracer_service(self())
     end
-    register_with_tracer_service(db_config)
+    register_with_tracer_service(shell_config)
   end
 
   defp do_start_tracer_service(shell_pid) do
     scope = History.configuration(:scope, :local)
     hide_history_cmds = History.configuration(:hide_history_commands, true)
+    prepend_ids? = History.configuration(:prepend_identifiers, true)
     real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
     spawn(fn ->
       Process.register(self(), @tracer_reg_name)
       send(shell_pid, :started)
       Process.send_after(self(), :size_check, @size_check_interval)
-      tracer_loop(%{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit})
+      tracer_loop(%{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit, prepend_identifiers: prepend_ids?})
     end)
     wait_rsp(:started)
   end
 
-  defp register_with_tracer_service(db_config) do
+  defp register_with_tracer_service(shell_config) do
     server_pid = Process.info(self())[:dictionary][:iex_server]
-    send_msg({:register, self(), server_pid, db_config})
+    send_msg({:register, self(), server_pid, shell_config})
   end
 
   defp tracer_loop(%{scope: scope, store_count: store_count} = process_info) do
     receive do
       {:trace, _, :send, {:eval, _, command, _}, shell_pid} ->
-        save_traced_command(command, shell_pid, process_info)
-        tracer_loop(process_info)
+        new_process_info = save_traced_command(command, shell_pid, process_info)
+        tracer_loop(new_process_info)
 
       {:item, shell_pid, command} ->
-        save_traced_command(command, shell_pid, process_info)
-        tracer_loop(process_info)
+        new_command = modify_command(command, shell_pid, process_info)
+        new_process_info = save_traced_command(new_command, shell_pid, process_info)
+        tracer_loop(new_process_info)
 
-      {:register, shell_pid, server_pid, db_config} ->
+      {:register, shell_pid, server_pid, shell_config} ->
         if Map.get(process_info, shell_pid) == nil do
-          new_process_info = Map.put(process_info, shell_pid, db_config)
-          new_process_info = Map.put(new_process_info, db_config.node, shell_pid)
-          store_count = History.Store.open_store(db_config.store_name, db_config.store_filename, scope, store_count)
+          new_process_info = Map.put(process_info, shell_pid, shell_config)
+          new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
+          store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
           :erlang.trace(server_pid, true, [:send])
-          Node.monitor(db_config.node, true)
+          Node.monitor(shell_config.node, true)
           Process.monitor(shell_pid)
           tracer_loop(%{new_process_info | store_count: store_count})
         else
@@ -263,6 +266,9 @@ defmodule History.Events do
 
       {:hide_history_commands, value} ->
         tracer_loop(%{process_info | hide_history_commands: value})
+
+      {:prepend_identifiers, value} ->
+        tracer_loop(%{process_info | prepend_identifiers: value})
 
       {:DOWN, _, :process, shell_pid, :noproc} ->
         case Map.get(process_info, shell_pid) do
@@ -329,29 +335,36 @@ defmodule History.Events do
   defp save_traced_command(command, shell_pid, process_info), do:
     do_save_traced_command(String.trim(command), shell_pid, process_info)
 
-  defp do_save_traced_command("", _shell_pid, _process_info), do: :ok
+  defp do_save_traced_command("", _shell_pid, process_info), do: process_info
 
-  defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true} = process_info) do
-    do_not_save = String.starts_with?(command, [History.module_name(), "h(" <> History.module_name()])
+  defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true, prepend_identifiers: prepend_ids?} = process_info) do
+    {_, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
+    do_not_save = String.contains?(command, History.module_name())
     case Map.get(process_info, shell_pid) do
-      _ when do_not_save == true ->
-        :ok
-      data when is_map(data) ->
-        History.Store.save_data(data.store_name, {System.os_time(:second), command})
+      shell_config when do_not_save == true ->
+        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
+
+      shell_config when is_map(shell_config) ->
+        History.Store.save_data(shell_config.store_name, {System.os_time(:second), command})
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil}}
+
       _ ->
-        :ok
+        process_info
     end
   end
 
-  defp do_save_traced_command(command, shell_pid, process_info) do
-    do_not_save = String.starts_with?(command, History.exec_name())
+  defp do_save_traced_command(command, shell_pid, %{prepend_identifiers: prepend_ids?} = process_info) do
+    {do_not_save, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
     case Map.get(process_info, shell_pid) do
-      _ when do_not_save == true ->
-        :ok
-      data when is_map(data) ->
-        History.Store.save_data(data.store_name, {System.os_time(:second), command})
+      shell_config when do_not_save == true ->
+        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
+
+      shell_config when is_map(shell_config) ->
+        History.Store.save_data(shell_config.store_name, {System.os_time(:second), command})
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil}}
+
       _ ->
-        :ok
+        process_info
     end
   end
 
@@ -389,6 +402,42 @@ defmodule History.Events do
       {:state, state} -> {:state, state}
     after
       1000 -> :nok
+    end
+  end
+
+  defp save_and_find_history_x_identifiers(command, true) do
+    if String.contains?(command, History.exec_name()),
+        do: {false, find_history_x_identifiers(command)},
+        else: {true, nil}
+  end
+
+  defp save_and_find_history_x_identifiers(command, _), do:
+    {String.contains?(command, History.exec_name()), nil}
+
+  defp find_history_x_identifiers(command) do
+    {_, tokens} = :elixir.string_to_tokens(to_charlist(command),  1, "", [])
+    {_, quoted} = Enum.reduce_while(tokens, [],
+                        fn({:alias, _, :History} = history, acc) -> {:halt, [history | acc]};
+                          (token, acc) -> {:cont, [token | acc]}
+                        end)
+    |> Enum.reverse()
+    |> :elixir.tokens_to_quoted("", [])
+    response = Macro.to_string(quoted) |> String.replace("History", "")
+    if response == "", do: nil, else: response
+  end
+
+  defp modify_command(command, shell_pid, process_info) do
+    case Map.get(process_info, shell_pid) do
+      nil ->
+        command
+      %{prepend_ids: prepend_ids} = _shell_config ->
+        if prepend_ids == nil do
+          command
+        else
+          if String.starts_with?(command, prepend_ids),
+             do: command,
+             else: "#{prepend_ids} #{command}"
+        end
     end
   end
 

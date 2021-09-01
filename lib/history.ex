@@ -42,6 +42,7 @@ defmodule History do
         scope: :local,
         history_limit: :infinity,
         hide_history_commands: true,
+        prepend_identifiers: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -56,6 +57,40 @@ defmodule History do
     #{IO.ANSI.cyan()}:hide_history_commands #{IO.ANSI.white()} This will prevent all calls to #{IO.ANSI.cyan()}History.*#{IO.ANSI.white()} from been saved.
 
     NOTE: #{IO.ANSI.cyan()}History.x/1#{IO.ANSI.white()} is always hidden. Scope of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} will only hide them from output, otherwise they will not be saved.
+
+    #{IO.ANSI.cyan()}:prepend_identifiers #{IO.ANSI.white()} If this is enabled it will prepend identifiers when a call to #{IO.ANSI.cyan()}x = History(val)#{IO.ANSI.white()} is issued.
+
+    For example:
+
+      enabled:
+          iex> time = Time.utc_now().second
+          14
+          iex> new_time = History.x(1)
+          22
+
+          iex> new_time
+          22                  # New time is assigned to variable time
+          iex> time
+          13                  # However, the original date variable is unchanged
+
+          iex> History.h()
+          1: 2021-09-01 17:13:13: time = Time.utc_now().second
+          2: 2021-09-01 17:13:22: new_time =  time = Time.utc_now().second    # We see the binding to new_time
+
+        disabled:
+          iex> time = Time.utc_now().second
+          43
+          iex> new_time = History.x(1)
+          50
+
+          iex> new_time       # New time is assigned to variable time
+          50
+          iex> time
+          50                  # However, this time the original time variable has also unchanged
+
+          iex> History.h
+          1: 2021-09-01 17:17:43: time = Time.utc_now().second
+          2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
 
 
     #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} can be one of #{IO.ANSI.cyan()}:local, :global #{IO.ANSI.white()}or a #{IO.ANSI.cyan()}node name#{IO.ANSI.white()}
@@ -78,7 +113,8 @@ defmodule History do
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
-  @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, show_date: true, save_bindings: true, colors: @default_colors]
+  @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
+                   show_date: true, save_bindings: true, colors: @default_colors]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -86,7 +122,8 @@ defmodule History do
       [
         scope: :local,
         history_limit: :infinity,
-        hide_history_commands: true.
+        hide_history_commands: true,
+        prepend_identifiers: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -141,10 +178,11 @@ defmodule History do
     Displays the entire history.
   """
   def h() do
+    is_enabled!()
     try do
       History.Events.get_history()
     catch
-      _,_ -> {:error, :not_running}
+      _,_ -> {:error, :not_found}
     end
   end
 
@@ -156,10 +194,11 @@ defmodule History do
   def h(val)
 
   def h(match) do
+    is_enabled!()
     try do
       History.Events.get_history_item(match)
     catch
-      _,_ -> {:error, :not_running}
+      _,_ -> {:error, :not_found}
     end
   end
 
@@ -167,15 +206,16 @@ defmodule History do
     Invokes the command at index 'i'.
   """
   def x(i) do
+    is_enabled!()
     try do
       History.Events.execute_history_item(i)
     catch
-      _,_ -> {:error, :not_running}
+      _,_ -> {:error, :not_found}
     end
   end
 
   @doc """
-    Clears the history. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
+    Clears the history and bindings. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
     the IEx session needs restarting for the changes to take effect.
   """
   def clear() do
@@ -187,7 +227,7 @@ defmodule History do
   end
 
   @doc """
-      Clears the history and stops the service. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()} :global#{IO.ANSI.white()} the IEx session needs restarting for the changes to take effect.
+      Clears the history and bindings then stops the service. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()} :global#{IO.ANSI.white()} the IEx session needs restarting for the changes to take effect.
   """
   def stop_clear() do
     History.Events.stop_clear()
@@ -220,6 +260,7 @@ defmodule History do
       :show_date
       :history_limit
       :hide_history_commands,
+      :prepend_identifiers,
       :save_bindings
   """
   @spec configure(Atom.t(), any) :: atom
@@ -234,6 +275,13 @@ defmodule History do
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
     History.Events.send_msg({:hide_history_commands, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
+  def configure(:prepend_identifiers, value) when value in [true, false] do
+    new_config = List.keyreplace(configuration(), :prepend_identifiers, 0, {:prepend_identifiers, value})
+    History.Events.send_msg({:prepend_identifiers, value})
     Process.put(:history_config, new_config)
     configuration()
   end
@@ -318,6 +366,11 @@ defmodule History do
   @doc false
   def persistence_mode(_), do:
     {:ok, false, :no_label, :no_node}
+
+  defp is_enabled!() do
+    if not is_enabled?(),
+       do: raise(%ArgumentError{message: "History is not enabled"})
+  end
 
   defp save_config(config) do
     infinity_limit = History.Events.infinity_limit()
