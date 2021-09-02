@@ -71,7 +71,10 @@ defmodule History.Events do
   @doc false
   def get_history_item(i) when i >= 1 do
     {date, command} = do_get_history_item(i)
-    display_formatted_date(i, date, command)
+    new_command = if String.length(command) > @max_command_width,
+                     do: String.slice(command, 0, @max_command_width) <> " .....",
+                     else: command
+    display_formatted_date(i, date, String.replace(new_command, ~r/\s+/, " "))
   end
 
   @doc false
