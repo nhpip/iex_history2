@@ -435,7 +435,7 @@ defmodule History.Events do
         %{process_info | shell_pid => %{shell_config | success_count: current_count}}
 
       _ ->
-        {:good, nil, process_info}
+        process_info
     end
   end
 
