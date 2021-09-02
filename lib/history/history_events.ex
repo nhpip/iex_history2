@@ -49,11 +49,7 @@ defmodule History.Events do
   def get_history() do
     History.configuration(:scope, :local)
     |> do_get_history()
-    |> Enum.reduce(1,
-         fn({date, command}, count) ->
-           display_formatted_date(count, date, command)
-            count + 1
-    end)
+    |> pp_history_items(1)
     :ok
   end
 
@@ -73,9 +69,22 @@ defmodule History.Events do
   end
 
   @doc false
-  def get_history_item(i) do
+  def get_history_item(i) when i >= 1 do
     {date, command} = do_get_history_item(i)
     display_formatted_date(i, date, command)
+  end
+
+  @doc false
+  def get_history_item(i) do
+    do_get_history_item(i)
+    |> pp_history_items(state(:number) + i)
+  end
+
+  @doc false
+  def get_history_items(start, stop) do
+    real_start = if is_atom(start), do: 1, else: start
+    do_get_history_range(start, stop)
+    |> pp_history_items(real_start)
   end
 
   @doc false
@@ -114,7 +123,7 @@ defmodule History.Events do
   end
 
   @doc false
-  def state(pretty \\ false) do
+  def state(how \\ :normal) do
     my_node = History.my_real_node()
     send_msg({:state, self()})
     count = case wait_rsp({:state, :_}) do
@@ -130,7 +139,11 @@ defmodule History.Events do
         0
     end
     string = "#{IO.ANSI.white()}Current history is #{IO.ANSI.red()}#{count} #{IO.ANSI.white()}commands in size"
-    if pretty, do: IO.puts("#{string}"), else: string
+    if how == :pretty do
+      IO.puts("#{string}")
+    else
+      if how == :number, do: count, else: string
+    end
   end
 
   @doc false
@@ -167,7 +180,39 @@ defmodule History.Events do
 
   defp do_initialize(_), do: :not_ok
 
-  defp do_get_history_item(i), do: History.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
+  defp do_get_history_item(i) when i >= 1, do:
+    History.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
+
+  defp do_get_history_item(i), do:
+    do_get_history_range(state(:number) + i, :stop)
+
+  defp do_get_history_range(:start, stop), do:
+    do_get_history_range(1, stop)
+
+  defp do_get_history_range(start, :stop), do:
+    do_get_history_range(start, state(:number))
+
+  defp do_get_history_range(start, stop) when start >= 1 and stop >= 1 do
+    start = start - 1
+    stop = stop - 1
+    history_size = state(:number)
+    if start > history_size or stop > history_size,
+       do: raise(%ArgumentError{message: "Values out of range, only #{history_size} entries exist"})
+    History.configuration(:scope, :local)
+    |> do_get_history()
+    |> Enum.slice(start, stop)
+  end
+
+  defp do_get_history_range(_start, _stop), do:
+    raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
+
+  defp pp_history_items(items, start) do
+    Enum.reduce(items, start,
+      fn({date, command}, count) ->
+        display_formatted_date(count, date, command)
+        count + 1
+      end)
+  end
 
   defp display_formatted_date(count, date, command) do
     show_date? = History.configuration(:show_date, true)

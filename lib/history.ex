@@ -188,7 +188,8 @@ defmodule History do
 
   @doc """
     If the argument is a string it displays the history that contain or match entirely the passed argument.
-    If the argument is an integer it displays the command at that index.
+    If the argument is a positive integer it displays the command at that index.
+    If the argument is a negative number it displays the history that many items from the end.
   """
   @spec h(String.t() | integer) :: atom
   def h(val)
@@ -197,6 +198,18 @@ defmodule History do
     is_enabled!()
     try do
       History.Events.get_history_item(match)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+    Specify a range, the atoms :start and :stop can also be used.
+  """
+  def h(start, stop) do
+    is_enabled!()
+    try do
+      History.Events.get_history_items(start, stop)
     catch
       _,_ -> {:error, :not_found}
     end
