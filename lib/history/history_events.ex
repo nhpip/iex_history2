@@ -30,7 +30,6 @@ defmodule History.Events do
   @store_name "store_history_events"
   @tracer_reg_name :history_tracer_handler
   @random_string "adarwerwvwvevwwerxrwfx"
-  @max_command_width 150
 
   @doc false
   def initialize(config) do
@@ -70,9 +69,10 @@ defmodule History.Events do
 
   @doc false
   def get_history_item(i) when i >= 1 do
+    display_width = get_command_width()
     {date, command} = do_get_history_item(i)
-    new_command = if String.length(command) > @max_command_width,
-                     do: String.slice(command, 0, @max_command_width) <> " .....",
+    new_command = if String.length(command) > display_width,
+                     do: String.slice(command, 0, display_width) <> " .....",
                      else: command
     display_formatted_date(i, date, String.replace(new_command, ~r/\s+/, " "))
   end
@@ -210,14 +210,19 @@ defmodule History.Events do
     raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
 
   defp pp_history_items(items, start) do
+    display_width = get_command_width()
     Enum.reduce(items, start,
       fn({date, command}, count) ->
-        new_command = if String.length(command) > @max_command_width,
-                          do: String.slice(command, 0, @max_command_width) <> " .....",
+        new_command = if String.length(command) > display_width,
+                          do: String.slice(command, 0, display_width) <> " .....",
                           else: command
         display_formatted_date(count, date, String.replace(new_command, ~r/\s+/, " "))
         count + 1
       end)
+  end
+
+  defp get_command_width() do
+    History.configuration(:command_display_width, nil)
   end
 
   defp display_formatted_date(count, date, command) do
@@ -260,7 +265,9 @@ defmodule History.Events do
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
     server_node = :erlang.node(:erlang.group_leader())
-    %{store_name: store_name, store_filename: store_filename, node: server_node, size: 0, prepend_ids: nil, pending_command: ""}
+    %{store_name: store_name, store_filename: store_filename,
+      node: server_node, size: 0, prepend_ids: nil, pending_command: "",
+      success_count: nil, last_command: nil}
   end
 
   defp start_tracer_service(shell_config) do
@@ -274,12 +281,15 @@ defmodule History.Events do
     scope = History.configuration(:scope, :local)
     hide_history_cmds = History.configuration(:hide_history_commands, true)
     prepend_ids? = History.configuration(:prepend_identifiers, true)
+    save_invalid = History.configuration(:save_invalid_results, true)
     real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
     spawn(fn ->
       Process.register(self(), @tracer_reg_name)
       send(shell_pid, :started)
       Process.send_after(self(), :size_check, @size_check_interval)
-      tracer_loop(%{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit, prepend_identifiers: prepend_ids?})
+      tracer_loop(%{scope: scope, hide_history_commands: hide_history_cmds,
+                    store_count: 0, limit: real_limit, prepend_identifiers: prepend_ids?,
+                    save_invalid_results: save_invalid})
     end)
     wait_rsp(:started)
   end
@@ -292,7 +302,6 @@ defmodule History.Events do
   defp tracer_loop(%{scope: scope, store_count: store_count} = process_info) do
     receive do
       {:trace, _, :send, {:eval, _, command, _}, shell_pid} ->
-        #IO.inspect(command)
         case validate_command(command, shell_pid, process_info) do
           {true, new_command, new_process_info} ->
             new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
@@ -301,6 +310,10 @@ defmodule History.Events do
           {_, _, new_process_info} ->
             tracer_loop(new_process_info)
         end
+
+      {:trace, _, :receive, {:evaled, shell_pid, %IEx.State{counter: count}}} ->
+        new_process_info = last_command_result(count, shell_pid, process_info)
+        tracer_loop(new_process_info)
 
       {:item, shell_pid, command} ->
         new_command = modify_command(command, shell_pid, process_info)
@@ -312,7 +325,7 @@ defmodule History.Events do
           new_process_info = Map.put(process_info, shell_pid, shell_config)
           new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
           store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
-          :erlang.trace(server_pid, true, [:send])
+          :erlang.trace(server_pid, true, [:send, :receive])
           Node.monitor(shell_config.node, true)
           Process.monitor(shell_pid)
           tracer_loop(%{new_process_info | store_count: store_count})
@@ -330,6 +343,9 @@ defmodule History.Events do
 
       {:prepend_identifiers, value} ->
         tracer_loop(%{process_info | prepend_identifiers: value})
+
+      {:save_invalid_results, value} ->
+        tracer_loop(%{process_info | save_invalid_results: value})
 
       {:DOWN, _, :process, shell_pid, :noproc} ->
         case Map.get(process_info, shell_pid) do
@@ -393,12 +409,35 @@ defmodule History.Events do
     end
   end
 
+  defp last_command_result(_current_count, _shell_pid, %{save_invalid_results: true} = process_info), do:
+    process_info
+
+  defp last_command_result(current_count, shell_pid, process_info) do
+    case Map.get(process_info, shell_pid) do
+      %{success_count: nil} = shell_config ->
+        %{process_info | shell_pid => %{shell_config | success_count: current_count}}
+
+      %{success_count: val, last_command: last_command, pending_command: "", store_name: store} when current_count == val ->
+        History.Store.delete_data(store, last_command)
+        process_info
+
+      %{success_count: val} when current_count == val ->
+        process_info
+
+      %{success_count: val} = shell_config when current_count > val ->
+        %{process_info | shell_pid => %{shell_config | success_count: current_count}}
+
+      _ ->
+        {:good, nil, process_info}
+    end
+  end
+
   defp validate_command(command, shell_pid, process_info) do
     case Map.get(process_info, shell_pid) do
       shell_config when is_map(shell_config) ->
         do_validate_command(command, shell_config, process_info, shell_pid)
       _ ->
-        {true, nil, process_info}
+        process_info
     end
   end
 
@@ -438,8 +477,9 @@ defmodule History.Events do
         %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
 
       shell_config when is_map(shell_config) ->
-        History.Store.save_data(shell_config.store_name, {System.os_time(:second), command})
-        %{process_info | shell_pid => %{shell_config | prepend_ids: nil}}
+        key = System.os_time(:millisecond)
+        History.Store.save_data(shell_config.store_name, {key, command})
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key}}
 
       _ ->
         process_info
@@ -453,8 +493,9 @@ defmodule History.Events do
         %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
 
       shell_config when is_map(shell_config) ->
-        History.Store.save_data(shell_config.store_name, {System.os_time(:second), command})
-        %{process_info | shell_pid => %{shell_config | prepend_ids: nil}}
+        key = System.os_time(:millisecond)
+        History.Store.save_data(shell_config.store_name, {key, command})
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key}}
 
       _ ->
         process_info
@@ -487,7 +528,7 @@ defmodule History.Events do
   end
 
   defp unix_to_date(unix), do:
-    DateTime.from_unix!(unix) |> DateTime.to_string() |> String.replace("Z", "")
+    DateTime.from_unix!(round(unix/1000)) |> DateTime.to_string() |> String.replace("Z", "")
 
   defp wait_rsp(what) do
     receive do

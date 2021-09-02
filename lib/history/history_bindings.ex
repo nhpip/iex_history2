@@ -206,7 +206,7 @@ defmodule History.Bindings do
             try do
               elem(IEx.Evaluator.value_from_binding(shell_pid, server_pid, var, %{}), 1)
             catch
-              _,_ -> IO.inspect(:fuck) ; :could_not_bind
+              _,_ -> :could_not_bind
             end
          end
     Enum.zip(variables, bindings)

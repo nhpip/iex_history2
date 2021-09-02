@@ -43,6 +43,8 @@ defmodule History do
         history_limit: :infinity,
         hide_history_commands: true,
         prepend_identifiers: true,
+        command_display_width: int,
+        save_invalid_results: false,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -57,6 +59,8 @@ defmodule History do
     #{IO.ANSI.cyan()}:hide_history_commands #{IO.ANSI.white()} This will prevent all calls to #{IO.ANSI.cyan()}History.*#{IO.ANSI.white()} from been saved.
 
     NOTE: #{IO.ANSI.cyan()}History.x/1#{IO.ANSI.white()} is always hidden. Scope of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} will only hide them from output, otherwise they will not be saved.
+
+    #{IO.ANSI.cyan()}:save_invalid_results #{IO.ANSI.white()} If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
     #{IO.ANSI.cyan()}:prepend_identifiers #{IO.ANSI.white()} If this is enabled it will prepend identifiers when a call to #{IO.ANSI.cyan()}x = History(val)#{IO.ANSI.white()} is issued.
 
@@ -112,9 +116,11 @@ defmodule History do
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
+  @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
   @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
-                   show_date: true, save_bindings: true, colors: @default_colors]
+                   show_date: true, save_bindings: true, command_display_width: @default_width,
+                   save_invalid_results: false, colors: @default_colors]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -124,6 +130,8 @@ defmodule History do
         history_limit: :infinity,
         hide_history_commands: true,
         prepend_identifiers: true,
+        command_display_width: int,
+        save_invalid_results: false,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -223,7 +231,8 @@ defmodule History do
     try do
       History.Events.execute_history_item(i)
     catch
-      _,_ -> {:error, :not_found}
+      _,{:badmatch, nil} -> {:error, :not_found}
+      _,_ -> {:error, :bad_command}
     end
   end
 
@@ -275,6 +284,8 @@ defmodule History do
       :hide_history_commands,
       :prepend_identifiers,
       :save_bindings,
+      :command_display_width,
+      :save_invalid_results,
       :colors
 
   Examples:
@@ -290,9 +301,22 @@ defmodule History do
     configuration()
   end
 
+  def configure(:command_display_width, value) when is_integer(value) do
+    new_config = List.keyreplace(configuration(), :command_display_width, 0, {:command_display_width, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
     History.Events.send_msg({:hide_history_commands, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
+  def configure(:save_invalid_results, value) when value in [true, false] do
+    new_config = List.keyreplace(configuration(), :save_invalid_results, 0, {:save_invalid_results, value})
+    History.Events.send_msg({:save_invalid_results, value})
     Process.put(:history_config, new_config)
     configuration()
   end
