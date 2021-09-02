@@ -20,6 +20,7 @@ The following options can be set:
       hide_history_commands: true,
       prepend_identifiers: true,
       command_display_width: int,
+      save_invalid_results: false,
       show_date: true,
       save_bindings: true,
       colors: [
@@ -34,6 +35,8 @@ The following options can be set:
 `:hide_history_commands` This will prevent all calls to History.* from been saved.
 
 NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
+
+`:save_invalid_results` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
 `:prepend_identifiers`  If this is enabled it will prepend identifiers when a call to x = History(val) is issued.
 
@@ -140,6 +143,7 @@ Initializes the History app. Takes the following parameters:
         history_limit: :infinity,
         prepend_identifiers: true,
         show_date: true,
+        save_invalid_results: false,
         save_bindings: true,
         colors: [
           index: :red,
@@ -176,6 +180,7 @@ Allows the following options to be changed, but not saved:
     :hide_history_commands,
     :prepend_identifiers,
     :command_display_width,
+    :save_invalid_results,
     :save_bindings,
     :colors
  ```   
