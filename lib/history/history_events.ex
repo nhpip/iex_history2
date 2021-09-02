@@ -30,7 +30,7 @@ defmodule History.Events do
   @store_name "store_history_events"
   @tracer_reg_name :history_tracer_handler
   @random_string "adarwerwvwvevwwerxrwfx"
-
+  @max_command_width 150
 
   @doc false
   def initialize(config) do
@@ -209,7 +209,10 @@ defmodule History.Events do
   defp pp_history_items(items, start) do
     Enum.reduce(items, start,
       fn({date, command}, count) ->
-        display_formatted_date(count, date, command)
+        new_command = if String.length(command) > @max_command_width,
+                          do: String.slice(command, 0, @max_command_width) <> " .....",
+                          else: command
+        display_formatted_date(count, date, String.replace(new_command, ~r/\s+/, " "))
         count + 1
       end)
   end
@@ -254,7 +257,7 @@ defmodule History.Events do
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
     server_node = :erlang.node(:erlang.group_leader())
-    %{store_name: store_name, store_filename: store_filename, node: server_node, size: 0, prepend_ids: nil}
+    %{store_name: store_name, store_filename: store_filename, node: server_node, size: 0, prepend_ids: nil, pending_command: ""}
   end
 
   defp start_tracer_service(shell_config) do
@@ -286,8 +289,15 @@ defmodule History.Events do
   defp tracer_loop(%{scope: scope, store_count: store_count} = process_info) do
     receive do
       {:trace, _, :send, {:eval, _, command, _}, shell_pid} ->
-        new_process_info = save_traced_command(command, shell_pid, process_info)
-        tracer_loop(new_process_info)
+        #IO.inspect(command)
+        case validate_command(command, shell_pid, process_info) do
+          {true, new_command, new_process_info} ->
+            new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
+            tracer_loop(new_process_info)
+
+          {_, _, new_process_info} ->
+            tracer_loop(new_process_info)
+        end
 
       {:item, shell_pid, command} ->
         new_command = modify_command(command, shell_pid, process_info)
@@ -377,6 +387,38 @@ defmodule History.Events do
       _ ->
         tracer_loop(process_info)
 
+    end
+  end
+
+  defp validate_command(command, shell_pid, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_config when is_map(shell_config) ->
+        do_validate_command(command, shell_config, process_info, shell_pid)
+      _ ->
+        {true, nil, process_info}
+    end
+  end
+
+  defp do_validate_command(command, %{pending_command: pending} = shell_config, process_info, shell_pid) do
+    if is_command_valid?(command) do
+        {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+    else
+      new_command = pending <> command
+      if is_command_valid?(new_command) do
+        {true, new_command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+      else
+        new_pending = String.replace(new_command, "\n", "")
+        {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: new_pending}}}
+      end
+    end
+  end
+
+  def is_command_valid?(command) do
+    try do
+      Code.format_string!(command)
+      true
+    catch
+      _,_ -> false
     end
   end
 
