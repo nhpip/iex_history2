@@ -19,6 +19,7 @@ The following options can be set:
       history_limit: :infinity,
       hide_history_commands: true,
       prepend_identifiers: true,
+      command_display_width: int,
       show_date: true,
       save_bindings: true,
       colors: [
@@ -174,6 +175,7 @@ Allows the following options to be changed, but not saved:
     :history_limit
     :hide_history_commands,
     :prepend_identifiers,
+    :command_display_width,
     :save_bindings,
     :colors
  ```   
