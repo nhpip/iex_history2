@@ -156,6 +156,13 @@ defmodule History.Events do
    end
 
   @doc false
+  def raw_state(pid) do
+    send_msg({:state, self()})
+    {_, map} = wait_rsp({:state, :_})
+    Map.get(map, pid)
+  end
+
+  @doc false
   def does_current_scope_match?(new_scope) do
     send_msg({:state, self()})
     case wait_rsp({:state, :_}) do
