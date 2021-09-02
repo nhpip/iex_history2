@@ -100,7 +100,9 @@ Displays the entire history.
 ```
 
 ### History.h(val)
-If the argument is a string it displays the history that contain or match entirely the passed argument. If the argument is an integer it displays the command at that index.
+If the argument is a string it displays the history that contain or match entirely the passed argument. 
+If the argument is a positive integer it displays the command at that index.
+If the argument is a negative number it displays the history that many items from the end.
 ```
     iex> History.h(2)
     2: 2021-09-01 17:29:31: time = Time.utc_now().second
@@ -112,6 +114,9 @@ If the argument is a string it displays the history that contain or match entire
     101: 2021-09-01 19:01:15: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :disabled])
     103: 2021-09-01 19:01:30: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :enabled])
 ```
+
+### History.h(start, stop)
+Specify a range, the atoms :start and :stop can also be used.
 
 ### History.x(idx)
 Invokes the command at index 'i'.
