@@ -450,7 +450,7 @@ defmodule History.Events do
 
   defp do_validate_command(command, %{pending_command: pending} = shell_config, process_info, shell_pid) do
     if is_command_valid?(command) do
-        {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+      {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     else
       new_command = pending <> command
       if is_command_valid?(new_command) do
