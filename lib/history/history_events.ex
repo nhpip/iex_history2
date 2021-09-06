@@ -31,6 +31,10 @@ defmodule History.Events do
   @tracer_reg_name :history_tracer_handler
   @random_string "adarwerwvwvevwwerxrwfx"
 
+  @history_buffer_size 50
+  @history_scan_key  21     # ctrl+u
+  @history_down_key 11    # ctrl+k
+
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
@@ -69,12 +73,8 @@ defmodule History.Events do
 
   @doc false
   def get_history_item(i) when i >= 1 do
-    display_width = get_command_width()
     {date, command} = do_get_history_item(i)
-    new_command = if String.length(command) > display_width,
-                     do: String.slice(command, 0, display_width) <> " .....",
-                     else: command
-    display_formatted_date(i, date, String.replace(new_command, ~r/\s+/, " "))
+    display_formatted_date(i, date, String.replace(command, ~r/\s+/, " "))
   end
 
   @doc false
@@ -99,6 +99,13 @@ defmodule History.Events do
        do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(command)]),
        else: send_msg({:item, self(), command})
     result
+  end
+
+  @doc false
+  def copy_paste_history_item(i) do
+    {_date, command} = do_get_history_item(i)
+    send_msg({:paste_command, self(), command})
+    :ok
   end
 
   @doc false
@@ -202,7 +209,7 @@ defmodule History.Events do
   defp do_get_history_range(start, :stop), do:
     do_get_history_range(start, state(:number))
 
-  defp do_get_history_range(start, stop) when start >= 1 and stop >= 1 do
+  defp do_get_history_range(start, stop) when start >= 1 and stop > start do
     start = start - 1
     stop = stop - 1
     history_size = state(:number)
@@ -264,6 +271,14 @@ defmodule History.Events do
     |> Enum.map(fn({date, cmd}) -> {unix_to_date(date), String.trim(cmd)} end)
   end
 
+  def do_get_history_registration(store_name, start, stop) do
+    History.Store.get_all_objects(store_name)
+    |> Enum.sort(:asc)
+    |> Enum.map(fn({_date, cmd}) -> String.trim(cmd) end)
+    |> Enum.slice(start, stop)
+    |> Enum.reverse()
+  end
+
   defp init_stores(scope, my_node) do
     str_label = if scope in [:node, :local],
                    do: "#{scope}_#{my_node}",
@@ -271,10 +286,14 @@ defmodule History.Events do
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
-    server_node = :erlang.node(:erlang.group_leader())
-    %{store_name: store_name, store_filename: store_filename,
-      node: server_node, size: 0, prepend_ids: nil, pending_command: "",
-      success_count: nil, last_command: nil}
+    group_leader = Process.group_leader()
+    {user_driver, port} = get_shell_info()
+    server_node = :erlang.node(group_leader)
+    server_pid = Process.info(self())[:dictionary][:iex_server]
+    %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
+      node: server_node, size: 0, prepend_ids: nil, pending_command: "", user_driver: user_driver,
+      port: port, success_count: nil, last_command: nil, group_leader: group_leader, queue: {0, []},
+      scan_direction: nil, last_direction: :up}
   end
 
   defp start_tracer_service(shell_config) do
@@ -302,8 +321,30 @@ defmodule History.Events do
   end
 
   defp register_with_tracer_service(shell_config) do
-    server_pid = Process.info(self())[:dictionary][:iex_server]
-    send_msg({:register, self(), server_pid, shell_config})
+    send_msg({:register, shell_config})
+  end
+
+  def setup_tracers(%{group_leader: group_leader, node: my_node, server_pid: server_pid} = _shell_config) do
+    my_pid = self()
+    :erlang.trace(server_pid, true, [:send, :receive])
+    if my_node == Node.self() do
+      :erlang.trace(group_leader, true, [:receive])
+    else
+      {mod, bin, _file} = :code.get_object_code(__MODULE__)
+      :rpc.call(my_node, :code, :load_binary, [mod, :nofile, bin])
+      Node.spawn(my_node, fn ->
+                :erlang.trace(group_leader, true, [:receive])
+                remote_tracer_loop(my_pid)
+      end)
+    end
+  end
+
+  def remote_tracer_loop(dest_pid) do
+    receive do
+      message ->
+        send(dest_pid,message)
+        remote_tracer_loop(dest_pid)
+    end
   end
 
   defp tracer_loop(%{scope: scope, store_count: store_count} = process_info) do
@@ -318,8 +359,14 @@ defmodule History.Events do
             tracer_loop(new_process_info)
         end
 
+      {:trace, _, :receive, {:evaled, shell_pid, %IEx.State{cache: [], counter: count}}} ->
+
+        new_process_info = last_command_result(count, shell_pid, process_info, :empty_cache)
+        tracer_loop(new_process_info)
+
+
       {:trace, _, :receive, {:evaled, shell_pid, %IEx.State{counter: count}}} ->
-        new_process_info = last_command_result(count, shell_pid, process_info)
+        new_process_info = last_command_result(count, shell_pid, process_info, :ok)
         tracer_loop(new_process_info)
 
       {:item, shell_pid, command} ->
@@ -327,14 +374,38 @@ defmodule History.Events do
         new_process_info = save_traced_command(new_command, shell_pid, process_info)
         tracer_loop(new_process_info)
 
-      {:register, shell_pid, server_pid, shell_config} ->
+      {:paste_command, shell_pid, command} ->
+        paste_command(command, shell_pid, process_info)
+        tracer_loop(process_info)
+
+      {:trace, leader_pid, :receive, {_, {:data, [@history_scan_key]}}} ->
+        new_process_info = queue_display_handler(leader_pid, process_info, :scan)
+        tracer_loop(new_process_info)
+
+      {:trace, leader_pid, :receive, {_, {:data, [@history_down_key]}}} ->
+        new_process_info = queue_display_handler(leader_pid, process_info, :initial_down)
+        tracer_loop(new_process_info)
+
+      {:trace, leader_pid, :receive, {_, {:data, '\r'}}} ->
+        new_process_info = queue_display_handler(leader_pid, process_info, :return)
+        tracer_loop(new_process_info)
+
+
+      {:register, %{shell_pid: shell_pid} = shell_config} ->
         if Map.get(process_info, shell_pid) == nil do
-          new_process_info = Map.put(process_info, shell_pid, shell_config)
-          new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
           store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
-          :erlang.trace(server_pid, true, [:send, :receive])
+          setup_tracers(shell_config)
           Node.monitor(shell_config.node, true)
           Process.monitor(shell_pid)
+          current_size = History.Store.info(shell_config.store_name, :size)
+          queue = if current_size > 0 do
+              start = min(@history_buffer_size, current_size)
+              {0, do_get_history_registration(shell_config.store_name, start*-1, current_size)}
+          else
+              {0, []}
+          end
+          new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: queue})
+          new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
           tracer_loop(%{new_process_info | store_count: store_count})
         else
           tracer_loop(process_info)
@@ -377,10 +448,10 @@ defmodule History.Events do
 
       {:clear, pid} ->
         case Map.get(process_info, pid) do
-          %{store_name: store_name} ->
+          %{store_name: store_name} = shell_info ->
             History.Store.delete_all_objects(store_name)
             send(pid, :ok_done)
-            tracer_loop(process_info)
+            tracer_loop(%{process_info | pid => %{shell_info | queue: {0, []}}})
           _ ->
             send(pid, :ok_done)
             tracer_loop(process_info)
@@ -416,10 +487,35 @@ defmodule History.Events do
     end
   end
 
-  defp last_command_result(_current_count, _shell_pid, %{save_invalid_results: true} = process_info), do:
+  defp get_shell_info() do
+    user_driver = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [Process.group_leader()])[:dictionary][:user_drv]
+    link_info = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [user_driver])[:links]
+    port = Enum.filter(link_info, &is_port(&1)) |> hd()
+    {user_driver, port}
+  end
+
+  defp send_to_shell(user_driver, port, _command, :initial_down) do
+    send(user_driver, {port,{:data, [21]}})
+  end
+
+  defp send_to_shell(user_driver, port, command, _) do
+    send(user_driver, {port,{:data, [to_charlist(command)]}})
+  end
+
+  defp paste_command(command, shell_pid, process_info) do
+    case Map.get(process_info, shell_pid) do
+      %{user_driver: user_driver, port: port} = _shell_config ->
+        send_to_shell(user_driver, port, command, nil)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp last_command_result(_current_count, _shell_pid, %{save_invalid_results: true} = process_info, _), do:
     process_info
 
-  defp last_command_result(current_count, shell_pid, process_info) do
+  defp last_command_result(current_count, shell_pid, process_info, cache) do
     case Map.get(process_info, shell_pid) do
       %{success_count: nil} = shell_config ->
         %{process_info | shell_pid => %{shell_config | success_count: current_count}}
@@ -427,6 +523,10 @@ defmodule History.Events do
       %{success_count: val, last_command: last_command, pending_command: "", store_name: store} when current_count == val ->
         History.Store.delete_data(store, last_command)
         process_info
+
+      %{success_count: val, queue: queue, last_command: last_command, pending_command: pending, store_name: store} = shell_config when current_count == val and cache == :empty_cache ->
+        History.Store.delete_data(store, last_command)
+        %{process_info | shell_pid => %{shell_config | success_count: current_count, queue: queue_insert(pending, queue)}}
 
       %{success_count: val} when current_count == val ->
         process_info
@@ -437,6 +537,63 @@ defmodule History.Events do
       _ ->
         process_info
     end
+  end
+
+  defp queue_display_handler(leader_pid, process_info, operation) do
+    case Enum.find(process_info, fn({k,v}) -> is_pid(k) && v.group_leader == leader_pid end) do
+      {shell_pid,  %{queue: {_sp, queue}} = shell_config} when operation == :return ->
+        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, scan_direction: nil}}
+
+      {shell_pid,  %{user_driver: user_driver, port: port} = shell_config} when operation == :initial_down ->
+        send_to_shell(user_driver, port, nil, :initial_down)
+        %{process_info | shell_pid => %{shell_config | scan_direction: :down}}
+
+      {_, %{queue: {_sp, []}}} ->
+        process_info
+
+      {shell_pid,  %{queue: {sp, queue}, user_driver: user_driver, port: port, scan_direction: scan_direction, last_direction: last_direction} = shell_config} ->
+        queue_size = Enum.count(queue)
+        direction = if scan_direction == :down, do: :down, else: :up
+        search_pos = get_search_position(sp, queue_size, last_direction, direction)
+
+        if search_pos != nil do
+          actual_search_pos = if search_pos == 0, do: 1, else: search_pos - 1
+          {_, command} = Enum.fetch(queue, actual_search_pos)
+          send_to_shell(user_driver, port, String.replace(command, ~r/\s+/, " "), operation)
+          %{process_info | shell_pid => %{shell_config | queue: {search_pos, queue}, scan_direction: nil, last_direction: direction}}
+        else
+          %{process_info | shell_pid => %{shell_config | scan_direction: nil, last_direction: direction}}
+        end
+
+      _ ->
+        process_info
+    end
+  end
+
+  defp get_search_position(0, _size, :up, :up), do: 1
+  defp get_search_position(current_value, size, :up, :up) when current_value >= size, do: current_value
+  defp get_search_position(current_value, _size, :up, :up), do: current_value + 1
+
+  defp get_search_position(0, _size, :down, :down), do: nil
+  defp get_search_position(1, _size, :down, :down), do: nil
+  defp get_search_position(current_value, _size, :down, :down), do: current_value - 1
+
+  defp get_search_position(0, _size, :up, :down), do: nil
+  defp get_search_position(1, _size, :up, :down), do: nil
+  defp get_search_position(current_value, size, :up, :down) when current_value >= size - 1, do: current_value - 1
+  defp get_search_position(current_value, _size, :up, :down), do: current_value - 1
+
+  defp get_search_position(0, _size, :down, :up), do: 1
+  defp get_search_position(current_value, _size, :down, :up), do: current_value + 1
+
+  defp queue_insert(command, {_, queue}) do
+      size = Enum.count(queue)
+      if size >= @history_buffer_size do
+        queue = Enum.take(queue, size-1)
+        {0, [command | queue]}
+      else
+        {0, [command | queue]}
+      end
   end
 
   defp validate_command(command, shell_pid, process_info) do
@@ -478,15 +635,15 @@ defmodule History.Events do
 
   defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true, prepend_identifiers: prepend_ids?} = process_info) do
     {_, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
-    do_not_save = String.contains?(command, History.module_name())
+    do_not_save = String.contains?(command, History.exclude_from_history())
     case Map.get(process_info, shell_pid) do
-      shell_config when do_not_save == true ->
-        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
+      %{queue: queue} = shell_config when do_not_save == true ->
+        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers, queue: queue_insert(command, queue)}}
 
-      shell_config when is_map(shell_config) ->
+      %{queue: queue} = shell_config ->
         key = System.os_time(:millisecond)
         History.Store.save_data(shell_config.store_name, {key, command})
-        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key}}
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue)}}
 
       _ ->
         process_info
@@ -496,13 +653,13 @@ defmodule History.Events do
   defp do_save_traced_command(command, shell_pid, %{prepend_identifiers: prepend_ids?} = process_info) do
     {do_not_save, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
     case Map.get(process_info, shell_pid) do
-      shell_config when do_not_save == true ->
-        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers}}
+      %{queue: queue} = shell_config when do_not_save == true ->
+        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers, queue: queue_insert(command, queue)}}
 
-      shell_config when is_map(shell_config) ->
+      %{queue: queue} = shell_config ->
         key = System.os_time(:millisecond)
         History.Store.save_data(shell_config.store_name, {key, command})
-        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key}}
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue)}}
 
       _ ->
         process_info

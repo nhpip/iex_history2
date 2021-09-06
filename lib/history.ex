@@ -115,6 +115,7 @@ defmodule History do
   @version "2.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
+  @exclude_from_history [@module_name <> ".h", @module_name <> ".x", @module_name <> ".c(", @module_name <> ".c "]
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
@@ -130,7 +131,7 @@ defmodule History do
         history_limit: :infinity,
         hide_history_commands: true,
         prepend_identifiers: true,
-        command_display_width: int,
+        command_display_width: :int,
         save_invalid_results: false,
         show_date: true,
         save_bindings: true,
@@ -236,6 +237,18 @@ defmodule History do
     end
   end
 
+  @doc """
+    Copies the command at index 'i' and pastes it to the shell
+  """
+  def c(i) do
+    is_enabled!()
+    try do
+      History.Events.copy_paste_history_item(i)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+  end
+  
   @doc """
     Clears the history and bindings. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
     the IEx session needs restarting for the changes to take effect.
@@ -374,6 +387,9 @@ defmodule History do
 
   @doc false
   def exec_name(), do: @exec_name
+
+  @doc false
+  def exclude_from_history(), do: @exclude_from_history
 
   @doc false
   def configuration(item, default), do:
