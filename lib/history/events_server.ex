@@ -135,6 +135,32 @@ defmodule History.Events.Server do
     {:noreply, new_process_info}
   end
 
+  def handle_cast({:key_buffer_history, true}, %{key_buffer_history: false} = process_info) do
+    new_process_info =
+      Enum.reduce(process_info, process_info,
+              fn({shell_pid, shell_config}, process_info) when is_pid(shell_pid) ->
+                    {kbh_pid, kbh_queue} = setup_key_buffer_history(shell_config, true)
+                    Map.put(process_info, shell_pid, %{shell_config | queue: kbh_queue, key_buffer_history_pid: kbh_pid});
+                (_, process_info) ->
+                    process_info
+              end)
+    {:noreply, %{new_process_info | key_buffer_history: true}}
+  end
+
+  def handle_cast({:key_buffer_history, false}, %{key_buffer_history: true} = process_info) do
+    new_process_info =
+      Enum.reduce(process_info, process_info,
+              fn({shell_pid, %{group_leader: group_leader, key_buffer_history_pid: kbh_pid} = shell_config}, process_info) when is_pid(shell_pid) ->
+                    if is_pid(kbh_pid),
+                       do: send(kbh_pid, :exit),
+                       else: :erlang.trace(group_leader, false, [:receive])
+                    Map.put(process_info, shell_pid, %{shell_config | queue: {0, []}, key_buffer_history_pid: nil});
+                (_, process_info) ->
+                    process_info
+      end)
+    {:noreply, %{new_process_info | key_buffer_history: false}}
+  end
+
   def handle_cast({:hide_history_commands, value}, process_info) do
     {:noreply, %{process_info | hide_history_commands: value}}
   end
@@ -179,12 +205,12 @@ defmodule History.Events.Server do
     {:noreply, new_process_info}
   end
 
-  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_scan_key]}}}, process_info) do
+  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_scan_key]}}}, %{key_buffer_history: true} = process_info) do
     new_process_info = queue_display_handler(leader_pid, process_info, :scan)
     {:noreply, new_process_info}
   end
 
-  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_down_key]}}}, process_info) do
+  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_down_key]}}}, %{key_buffer_history: true} = process_info) do
     new_process_info = queue_display_handler(leader_pid, process_info, :initial_down)
     {:noreply, new_process_info}
   end
@@ -228,20 +254,15 @@ defmodule History.Events.Server do
   end
 
 
-  defp do_register_new_shell(%{shell_pid: shell_pid} = shell_config, %{scope: scope, store_count: store_count} = process_info) do
+  defp do_register_new_shell(%{shell_pid: shell_pid,  server_pid: server_pid} = shell_config,
+            %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info) do
     if Map.get(process_info, shell_pid) == nil do
       store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
-      setup_tracers(shell_config)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
-      current_size = History.Store.info(shell_config.store_name, :size)
-      queue = if current_size > 0 do
-        start = min(@history_buffer_size, current_size)
-        {0, History.Events.do_get_history_registration(shell_config.store_name, start * -1, current_size)}
-      else
-        {0, []}
-      end
-      new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: queue})
+      :erlang.trace(server_pid, true, [:send, :receive])
+      {kbh_pid, kbh_queue} = setup_key_buffer_history(shell_config, key_buffer_history)
+      new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: kbh_queue, key_buffer_history_pid: kbh_pid})
       new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
       %{new_process_info | store_count: store_count}
     else
@@ -249,26 +270,45 @@ defmodule History.Events.Server do
     end
   end
 
-  defp setup_tracers(%{group_leader: group_leader, node: my_node, server_pid: server_pid} = _shell_config) do
+  defp setup_key_buffer_history(%{group_leader: group_leader, node: my_node, store_name: store_name} = _shell_config, true) do
     my_pid = self()
-    :erlang.trace(server_pid, true, [:send, :receive])
     if my_node == Node.self() do
       :erlang.trace(group_leader, true, [:receive])
+      {nil, setup_key_buffer_history_queue(store_name)}
     else
       {mod, bin, _file} = :code.get_object_code(__MODULE__)
       :rpc.call(my_node, :code, :load_binary, [mod, :nofile, bin])
-      Node.spawn(my_node, fn ->
-        :erlang.trace(group_leader, true, [:receive])
-        remote_tracer_loop(my_pid)
-      end)
+      queue = setup_key_buffer_history_queue(store_name)
+      pid = Node.spawn(my_node,
+              fn ->
+                  :erlang.trace(group_leader, true, [:receive])
+                  remote_key_buffer_history_loop(group_leader, my_pid)
+              end)
+      {pid, queue}
     end
   end
 
-  defp remote_tracer_loop(dest_pid) do
+  defp setup_key_buffer_history(_shell_config, _), do:
+    {nil, {0, []}}
+
+  defp setup_key_buffer_history_queue(store_name) do
+    current_size = History.Store.info(store_name, :size)
+    if current_size > 0 do
+      start = min(@history_buffer_size, current_size)
+      {0, History.Events.do_get_history_registration(store_name, start * -1, current_size)}
+    else
+      {0, []}
+    end
+  end
+
+  defp remote_key_buffer_history_loop(group_leader, dest_pid) do
     receive do
+      :exit ->
+        :erlang.trace(group_leader, false, [:receive])
+
       message ->
         send(dest_pid,message)
-        remote_tracer_loop(dest_pid)
+        remote_key_buffer_history_loop(group_leader, dest_pid)
     end
   end
 

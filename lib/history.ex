@@ -45,6 +45,7 @@ defmodule History do
         prepend_identifiers: true,
         command_display_width: int,
         save_invalid_results: false,
+        key_buffer_history: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -121,7 +122,7 @@ defmodule History do
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
   @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
                    show_date: true, save_bindings: true, command_display_width: @default_width,
-                   save_invalid_results: false, colors: @default_colors]
+                   save_invalid_results: false, key_buffer_history: true, colors: @default_colors]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -131,6 +132,7 @@ defmodule History do
         history_limit: :infinity,
         hide_history_commands: true,
         prepend_identifiers: true,
+        key_buffer_history: true,
         command_display_width: :int,
         save_invalid_results: false,
         show_date: true,
@@ -299,6 +301,7 @@ defmodule History do
       :save_bindings,
       :command_display_width,
       :save_invalid_results,
+      :key_buffer_history,
       :colors
 
   Examples:
@@ -323,6 +326,13 @@ defmodule History do
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
     History.Events.send_message({:hide_history_commands, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
+  def configure(:key_buffer_history, value) when value in [true, false] do
+    new_config = List.keyreplace(configuration(), :key_buffer_history, 0, {:key_buffer_history, value})
+    History.Events.send_message({:key_buffer_history, value})
     Process.put(:history_config, new_config)
     configuration()
   end

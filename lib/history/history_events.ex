@@ -278,7 +278,7 @@ defmodule History.Events do
     %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
       node: server_node, size: 0, prepend_ids: nil, pending_command: "", user_driver: user_driver,
       port: port, success_count: nil, last_command: nil, group_leader: group_leader, queue: {0, []},
-      scan_direction: nil, last_direction: :up}
+      scan_direction: nil, last_direction: :up, key_buffer_history_pid: nil}
   end
 
   defp register_or_start_tracer_service(local_shell_state) do
@@ -293,10 +293,11 @@ defmodule History.Events do
     hide_history_cmds = History.configuration(:hide_history_commands, true)
     prepend_ids? = History.configuration(:prepend_identifiers, true)
     save_invalid = History.configuration(:save_invalid_results, true)
+    key_buffer_history = History.configuration(:key_buffer_history, true)
     real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
     process_info_state =
           %{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit,
-            prepend_identifiers: prepend_ids?, save_invalid_results: save_invalid}
+            prepend_identifiers: prepend_ids?, save_invalid_results: save_invalid, key_buffer_history: key_buffer_history}
     Server.start_link(process_info_state)
   end
 
