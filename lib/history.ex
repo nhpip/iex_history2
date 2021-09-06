@@ -248,7 +248,7 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
-  
+
   @doc """
     Clears the history and bindings. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
     the IEx session needs restarting for the changes to take effect.
@@ -322,21 +322,21 @@ defmodule History do
 
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
-    History.Events.send_msg({:hide_history_commands, value})
+    History.Events.send_message({:hide_history_commands, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:save_invalid_results, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :save_invalid_results, 0, {:save_invalid_results, value})
-    History.Events.send_msg({:save_invalid_results, value})
+    History.Events.send_message({:save_invalid_results, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:prepend_identifiers, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :prepend_identifiers, 0, {:prepend_identifiers, value})
-    History.Events.send_msg({:prepend_identifiers, value})
+    History.Events.send_message({:prepend_identifiers, value})
     Process.put(:history_config, new_config)
     configuration()
   end
@@ -344,7 +344,7 @@ defmodule History do
   def configure(:history_limit, value) when is_integer(value) or value == :infinity do
     new_config = List.keyreplace(configuration(), :history_limit, 0, {:history_limit, value})
     new_value = if value == :infinity, do: History.Events.infinity_limit(), else: value
-    History.Events.send_msg({:new_history_limit, new_value})
+    History.Events.send_message({:new_history_limit, new_value})
     Process.put(:history_config, new_config)
     configuration()
   end
