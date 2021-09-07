@@ -63,7 +63,7 @@ defmodule History do
 
     #{IO.ANSI.cyan()}:save_invalid_results #{IO.ANSI.white()} If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
-    #{IO.ANSI.cyan()}:key_buffer_history #{IO.ANSI.white()} If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+j) through history.
+    #{IO.ANSI.cyan()}:key_buffer_history #{IO.ANSI.white()} If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
     Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down.
     This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating
     #{IO.ANSI.cyan()}@history_buffer_size#{IO.ANSI.white()} in #{IO.ANSI.cyan()}events_server.ex#{IO.ANSI.white()}. This will also not duplicate back to back identical commands.
