@@ -172,7 +172,7 @@ defmodule History do
 
   @doc """
     If you want to setup an alias like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()} rather than using #{IO.ANSI.cyan()}alias/2#{IO.ANSI.white()}
-    from the shell, please use this function instead. So to create and alias of #{IO.ANSI.cyan()}H#{IO.ANSI.white()} use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()}.
+    from the shell, please use this function instead. So to create an alias of #{IO.ANSI.cyan()}H#{IO.ANSI.white()} use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()}.
     This allows aliased functions to be handled correctly.
   """
   def alias(name) when is_atom(name) do
