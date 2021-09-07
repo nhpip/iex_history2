@@ -39,7 +39,7 @@ NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from 
 
 `:save_invalid_results` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
-`:key_buffer_history` If set to true will allow the user to scroll up `(ctrl+u)` or down `(ctrl+j)` through history. Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down. This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
+`:key_buffer_history` If set to true will allow the user to scroll up `(ctrl+u)` or down `(ctrl+k)` through history. Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down. This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
 
 `:prepend_identifiers`  If this is enabled it will prepend identifiers when a call to `x = History(val)` is issued.
 
