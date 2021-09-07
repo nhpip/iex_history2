@@ -173,7 +173,8 @@ Initializes the History app. Takes the following parameters:
 ### History.state()
 Displays the current state:
 ```
-    History version 2.0 is eenabled:
+    History version 2.0 is 
+    enabled:
       Current history is 199 commands in size.
       Current bindings are 153 variables in size.
 ```
@@ -211,3 +212,7 @@ Displays the current shell bindings.
 
 ### History.is_enabled?()
 Returns true or false is History is enabled
+
+### History.alias/1
+If you did something like `alias History, as: H` then pass the alias name as a string to this function so the results are excluded from the history.
+
