@@ -90,6 +90,7 @@ Furthermore, if a `scope` of `:global` is selected following kernel option must 
 
     --erl "-kernel shell_history enabled"
 ```
+A word about aliases. Rather than using something like `alias History, as: H`, please use `History.alias(H)` instead.
 
 ## Functions
 
@@ -214,5 +215,4 @@ Displays the current shell bindings.
 Returns true or false is History is enabled
 
 ### History.alias/1
-If you did something like `alias History, as: H` then pass the alias name as a string to this function so the results are excluded from the history.
-
+If you want to setup an alias like `alias History, as: H`, rather than using `alias/2` from the shell, please use this function instead. So to create an alias of `H` use `History.alias(H)`. This allows aliased functions to be handled correctly.
