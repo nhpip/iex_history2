@@ -27,7 +27,7 @@ defmodule History.Events.Server do
   @size_check_interval 60 * 1000
   @table_limit_exceeded_factor 0.1
 
-  @history_buffer_size 50
+  @history_buffer_size 75
   @save_immediate_buffer_duplicates false
   @history_scan_key  21     # ctrl+u
   @history_down_key 11    # ctrl+k
