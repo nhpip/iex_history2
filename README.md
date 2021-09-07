@@ -35,7 +35,7 @@ The following options can be set:
     
 `:hide_history_commands` This will prevent all calls to History.* from been saved.
 
-NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
+NOTE: `History.x/1` is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
 
 `:save_invalid_results` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
@@ -78,7 +78,7 @@ For example:
 
 `:scope` can be one of `:local, :global` or a `node()` name
 
-If `s:cope` is `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
+If `scope` is `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
 
 If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on that shell
 
