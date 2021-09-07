@@ -121,7 +121,9 @@ defmodule History do
   @version "2.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
-  @exclude_from_history [@module_name <> ".h", @module_name <> ".x", @module_name <> ".c(", @module_name <> ".c "]
+
+  @excluded_functions [".h", ".x", ".c(", ".c "]
+  @exclude_from_history for f <- @excluded_functions, do: @module_name <> f #[@module_name <> ".h", @module_name <> ".x", @module_name <> ".c(", @module_name <> ".c "]
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
@@ -167,6 +169,16 @@ defmodule History do
   end
 
   @doc """
+    If you did something like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()} then pass the alias name
+    as a string to this function so the results are excluded from the history.
+  """
+  def alias(name) when is_binary(name) do
+    excluded = for fun <- @excluded_functions, do: name <> fun
+    ## TODO: Find a better way
+    :persistent_term.put(:history_aliases, excluded ++ :persistent_term.get(:history_aliases, []))
+  end
+
+  @doc """
     Displays the current configuration.
   """
   def configuration(), do:
@@ -180,12 +192,12 @@ defmodule History do
   @doc """
     Displays the current state:
 
-      History version 2.0 is eenabled:
+      History version 2.0 is enabled:
         Current history is 199 commands in size.
         Current bindings are 153 variables in size.
   """
   def state() do
-    IO.puts("#{IO.ANSI.white()}History version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is eenabled:")
+    IO.puts("#{IO.ANSI.white()}History version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
     IO.puts("  #{History.Events.state()}.")
     IO.puts("  #{History.Bindings.state()}.")
   end
@@ -404,7 +416,10 @@ defmodule History do
   def exec_name(), do: @exec_name
 
   @doc false
-  def exclude_from_history(), do: @exclude_from_history
+  def exclude_from_history() do
+    aliases = :persistent_term.get(:history_aliases, [])
+    @exclude_from_history ++ aliases
+  end
 
   @doc false
   def configuration(item, default), do:
