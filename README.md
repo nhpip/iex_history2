@@ -21,6 +21,7 @@ The following options can be set:
       prepend_identifiers: true,
       command_display_width: int,
       save_invalid_results: false,
+      key_buffer_history: true,
       show_date: true,
       save_bindings: true,
       colors: [
@@ -37,6 +38,8 @@ The following options can be set:
 NOTE: History.x/1 is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
 
 `:save_invalid_results` If set to false, the default, commands that were evaluated incorrectly will not be saved.
+
+`:key_buffer_history` If set to true will allow the user to scroll up `(ctrl+u)` or down `(ctrl+j)` through history. Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down. This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating @history_buffer_size in events_server.ex. This will also not duplicate back to back identical commands.
 
 `:prepend_identifiers`  If this is enabled it will prepend identifiers when a call to x = History(val) is issued.
 
@@ -132,6 +135,17 @@ Invokes the command at index 'i'.
     3
 ```
 
+### History.c(idx)
+Copies the command at index 'i' and pastes it to the shell.
+```
+    iex> History.h(114)
+    114: 2021-09-01 19:30:14: Enum.count([1, 2, 3])
+    
+    iex> History.c(114)
+    :ok
+    iex> Enum.count([1, 2, 3])
+```
+
 ### History.clear()
 Clears the history and bindings. 
 
@@ -144,6 +158,7 @@ Initializes the History app. Takes the following parameters:
         prepend_identifiers: true,
         show_date: true,
         save_invalid_results: false,
+        key_buffer_history: true,
         save_bindings: true,
         colors: [
           index: :red,
@@ -181,6 +196,7 @@ Allows the following options to be changed, but not saved:
     :prepend_identifiers,
     :command_display_width,
     :save_invalid_results,
+    :key_buffer_history,
     :save_bindings,
     :colors
  ```   

@@ -45,6 +45,7 @@ defmodule History do
         prepend_identifiers: true,
         command_display_width: int,
         save_invalid_results: false,
+        key_buffer_history: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -61,6 +62,11 @@ defmodule History do
     NOTE: #{IO.ANSI.cyan()}History.x/1#{IO.ANSI.white()} is always hidden. Scope of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} will only hide them from output, otherwise they will not be saved.
 
     #{IO.ANSI.cyan()}:save_invalid_results #{IO.ANSI.white()} If set to false, the default, commands that were evaluated incorrectly will not be saved.
+
+    #{IO.ANSI.cyan()}:key_buffer_history #{IO.ANSI.white()} If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+j) through history.
+    Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down.
+    This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating
+    #{IO.ANSI.cyan()}@history_buffer_size#{IO.ANSI.white()} in #{IO.ANSI.cyan()}events_server.ex#{IO.ANSI.white()}. This will also not duplicate back to back identical commands.
 
     #{IO.ANSI.cyan()}:prepend_identifiers #{IO.ANSI.white()} If this is enabled it will prepend identifiers when a call to #{IO.ANSI.cyan()}x = History(val)#{IO.ANSI.white()} is issued.
 
@@ -121,7 +127,7 @@ defmodule History do
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
   @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
                    show_date: true, save_bindings: true, command_display_width: @default_width,
-                   save_invalid_results: false, colors: @default_colors]
+                   save_invalid_results: false, key_buffer_history: true, colors: @default_colors]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -131,6 +137,7 @@ defmodule History do
         history_limit: :infinity,
         hide_history_commands: true,
         prepend_identifiers: true,
+        key_buffer_history: true,
         command_display_width: :int,
         save_invalid_results: false,
         show_date: true,
@@ -248,7 +255,7 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
-  
+
   @doc """
     Clears the history and bindings. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
     the IEx session needs restarting for the changes to take effect.
@@ -299,6 +306,7 @@ defmodule History do
       :save_bindings,
       :command_display_width,
       :save_invalid_results,
+      :key_buffer_history,
       :colors
 
   Examples:
@@ -322,21 +330,28 @@ defmodule History do
 
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
-    History.Events.send_msg({:hide_history_commands, value})
+    History.Events.send_message({:hide_history_commands, value})
+    Process.put(:history_config, new_config)
+    configuration()
+  end
+
+  def configure(:key_buffer_history, value) when value in [true, false] do
+    new_config = List.keyreplace(configuration(), :key_buffer_history, 0, {:key_buffer_history, value})
+    History.Events.send_message({:key_buffer_history, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:save_invalid_results, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :save_invalid_results, 0, {:save_invalid_results, value})
-    History.Events.send_msg({:save_invalid_results, value})
+    History.Events.send_message({:save_invalid_results, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:prepend_identifiers, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :prepend_identifiers, 0, {:prepend_identifiers, value})
-    History.Events.send_msg({:prepend_identifiers, value})
+    History.Events.send_message({:prepend_identifiers, value})
     Process.put(:history_config, new_config)
     configuration()
   end
@@ -344,7 +359,7 @@ defmodule History do
   def configure(:history_limit, value) when is_integer(value) or value == :infinity do
     new_config = List.keyreplace(configuration(), :history_limit, 0, {:history_limit, value})
     new_value = if value == :infinity, do: History.Events.infinity_limit(), else: value
-    History.Events.send_msg({:new_history_limit, new_value})
+    History.Events.send_message({:new_history_limit, new_value})
     Process.put(:history_config, new_config)
     configuration()
   end
