@@ -296,7 +296,7 @@ defmodule History.Events do
     key_buffer_history = History.configuration(:key_buffer_history, true)
     real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
     process_info_state =
-          %{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit,
+          %{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit, module_alias: nil,
             prepend_identifiers: prepend_ids?, save_invalid_results: save_invalid, key_buffer_history: key_buffer_history}
     Server.start_link(process_info_state)
   end

@@ -173,6 +173,10 @@ defmodule History.Events.Server do
     {:noreply, %{process_info | save_invalid_results: value}}
   end
 
+  def handle_cast({:module_alias, value}, process_info) do
+    {:noreply, %{process_info | module_alias: value}}
+  end
+
   def handle_cast({:command_item, shell_pid, command}, process_info) do
     new_command = modify_command(command, shell_pid, process_info)
     new_process_info = save_traced_command(new_command, shell_pid, process_info)
@@ -184,8 +188,8 @@ defmodule History.Events.Server do
   end
 
 
-  def handle_info({:trace, _, :send, {:eval, _, command, _}, shell_pid}, process_info) do
-    case validate_command(command, shell_pid, process_info) do
+  def handle_info({:trace, _, :send, {:eval, _, command, _}, shell_pid}, %{module_alias: alias} = process_info) do
+    case validate_command(de_alias_command(command, alias), shell_pid, process_info) do
       {true, new_command, new_process_info} ->
         new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
         {:noreply, new_process_info}
@@ -577,5 +581,8 @@ defmodule History.Events.Server do
         end
     end
   end
+
+  defp de_alias_command(command, nil), do: command
+  defp de_alias_command(command, alias), do: String.replace(command, alias, "History.")
 
 end

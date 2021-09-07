@@ -116,6 +116,8 @@ defmodule History do
       export ERL_AFLAGS="-kernel shell_history enabled"
 
       --erl "-kernel shell_history enabled"
+
+    A word about aliases. Rather than using something like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()}, please use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()} instead.
   """
 
   @version "3.0"
@@ -169,13 +171,21 @@ defmodule History do
   end
 
   @doc """
-    If you did something like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()} then pass the alias name
-    as a string to this function so the results are excluded from the history.
+    If you want to setup an alias like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()} rather than using #{IO.ANSI.cyan()}alias/2#{IO.ANSI.white()}
+    from the shell, please use this function instead. So to create and alias of #{IO.ANSI.cyan()}H#{IO.ANSI.white()} use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()}.
+    This allows aliased functions to be handled correctly.
   """
-  def alias(name) when is_binary(name) do
-    excluded = for fun <- @excluded_functions, do: name <> fun
-    ## TODO: Find a better way
-    :persistent_term.put(:history_aliases, excluded ++ :persistent_term.get(:history_aliases, []))
+  def alias(name) when is_atom(name) do
+    if Process.get(:history_alias) == nil do
+      string_name = Atom.to_string(name) |> String.replace("Elixir.", "")
+      inject_command_all_servers("alias(#{__MODULE__}, as: #{string_name})")
+      excluded = for fun <- @excluded_functions, do: string_name <> fun
+      base_name = string_name <> "."
+      Process.put(:history_alias, base_name)
+      History.Events.send_message({:module_alias, base_name})
+      ## TODO: Find a better way
+      :persistent_term.put(:history_aliases, excluded ++ :persistent_term.get(:history_aliases, []))
+    end
   end
 
   @doc """
@@ -451,6 +461,18 @@ defmodule History do
   @doc false
   def persistence_mode(_), do:
     {:ok, false, :no_label, :no_node}
+
+  @doc false
+  def inject_command(command), do:
+    History.Bindings.inject_command(command)
+
+  defp inject_command_all_servers(command) do
+    Enum.each(Process.list(),
+                  fn(pid) ->
+                      if (server = Process.info(pid)[:dictionary][:iex_server]) != nil,
+                         do: send(pid, {:eval, server, command, %IEx.State{}})
+                  end)
+  end
 
   defp is_enabled!() do
     if not is_enabled?(),
