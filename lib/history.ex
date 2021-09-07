@@ -118,7 +118,7 @@ defmodule History do
       --erl "-kernel shell_history enabled"
   """
 
-  @version "2.0"
+  @version "3.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
