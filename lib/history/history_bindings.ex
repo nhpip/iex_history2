@@ -141,8 +141,9 @@ defmodule History.Bindings do
 
     if :ets.info(ets_name) == :undefined do
       :ets.new(ets_name, [:named_table, :public])
-      History.Store.open_store(store_name, store_filename, scope)
+      :ets.give_away(ets_name, :erlang.whereis(:init), [])
     end
+    History.Store.open_store(store_name, store_filename, scope)
 
     %{ets_name: ets_name, store_name: store_name, store_filename: store_filename}
   end
