@@ -150,10 +150,7 @@ Copies the command at index 'i' and pastes it to the shell.
     iex> History.c(114)
     :ok
     iex> Enum.count([1, 2, 3])
-```
-
-### History.clear()
-Clears the history and bindings. 
+``` 
 
 ### History.initialize(opts)
 Initializes the History app. Takes the following parameters:
