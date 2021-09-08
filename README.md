@@ -121,6 +121,11 @@ If the argument is a negative number it displays the history that many items fro
     48: 2021-09-01 18:14:02: Application.put_env(:kernel, :shell_history, 0)
     101: 2021-09-01 19:01:15: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :disabled])
     103: 2021-09-01 19:01:30: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :enabled])
+    
+    iex> History.h(-3)
+    5: 2021-09-01 17:50:10: Process.info self
+    6: 2021-09-01 17:50:33: r = o
+    7: 2021-09-01 17:52:36: Process.get(:iex_history)
 ```
 
 ### History.h(start, stop)
@@ -174,7 +179,7 @@ Initializes the History app. Takes the following parameters:
 ### History.state()
 Displays the current state:
 ```
-    History version 2.0 is 
+    History version 3.0 is 
     enabled:
       Current history is 199 commands in size.
       Current bindings are 153 variables in size.
