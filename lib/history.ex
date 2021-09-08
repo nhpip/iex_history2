@@ -96,7 +96,7 @@ defmodule History do
           iex> new_time       # New time is assigned to variable time
           50
           iex> time
-          50                  # However, this time the original time variable has also unchanged
+          50                  # However, this time the original time variable has also changed
 
           iex> History.h
           1: 2021-09-01 17:17:43: time = Time.utc_now().second
@@ -125,7 +125,7 @@ defmodule History do
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @excluded_functions [".h", ".x", ".c(", ".c "]
-  @exclude_from_history for f <- @excluded_functions, do: @module_name <> f #[@module_name <> ".h", @module_name <> ".x", @module_name <> ".c(", @module_name <> ".c "]
+  @exclude_from_history for f <- @excluded_functions, do: @module_name <> f
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
