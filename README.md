@@ -69,7 +69,7 @@ For example:
         iex> new_time       # New time is assigned to variable time
         50
         iex> time
-        50                  # However, this time the original time variable has also unchanged
+        50                  # However, this time the original time variable has also changed
 
         iex> History.h
         1: 2021-09-01 17:17:43: time = Time.utc_now().second
