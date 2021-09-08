@@ -214,8 +214,8 @@ defmodule History.Events.Server do
   ## of keyboard input so when we up/down one finds that the "only" one that doesn't break the output is ctrl-u. Ctrl-k doesn't do much
   ## but is no good for output.
   ##
-  ## So what we do is keep in the state of last direction of :up or :down. If we go up ctrl-u will work up the history nicely presenting
-  ## the output. It knows to go up in the history not based on the ctrl-u been pressed but based on the state, after a single "up" the
+  ## So what we do is keep in the state of last direction of :up or :down. If we go up ctrl-u will traverse up the history nicely presenting
+  ## historic commands to the shell. It knows to go up in the history not based on the ctrl-u been pressed but based on the state, after a single "up" the
   ## state is set to nil (which is assumed to also be up). To go down ctrl-k is pressed, we mark the state as down and then inject a
   ## ctrl-u to user_drv. The ctrl-u is captured by this code, except now the state says go down through history.
   def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_scan_key]}}}, %{key_buffer_history: true} = process_info) do
