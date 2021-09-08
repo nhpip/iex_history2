@@ -99,7 +99,7 @@ defmodule History.Events do
   @doc false
   def copy_paste_history_item(i) do
     {_date, command} = do_get_history_item(i)
-    Server.paste_command(command)
+    Server.paste_command(String.replace(command, ~r/\s+/, " "))
   end
 
   @doc false
