@@ -199,17 +199,11 @@ defmodule History.Events.Server do
     end
   end
 
-  #def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{cache: [], counter: count}}}, process_info) do
   def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{} = iex_state}}, process_info) do
     {cache_state, count} =  get_iex_state_cache_and_counter(iex_state)
     new_process_info = last_command_result(count, shell_pid, process_info, cache_state)
     {:noreply, new_process_info}
   end
-
- # def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{counter: count}}}, process_info) do
- #   new_process_info = last_command_result(count, shell_pid, process_info, :ok)
- #   {:noreply, new_process_info}
- # end
 
   ## This a bit odd, the only ctrl key that works is ctrl-u (of course this was chosen because U == up history). Basically the other
   ## ctrl keys are used for other features, or do strange handling on the shell. Basically user_drv.erl and group.erl take control
@@ -374,7 +368,7 @@ defmodule History.Events.Server do
       %{success_count: val, queue: queue, last_command: last_command, pending_command: pending, store_name: store} = shell_config when current_count == val and cache == :empty_cache ->
         History.Store.delete_data(store, last_command)
         #dle(last_command, pending)
-        :persistent_term.put(:os.timestamp(), Process.info(self(), :current_stacktrace))
+        #:persistent_term.put(:os.timestamp(), Process.info(self(), :current_stacktrace))
         %{process_info | shell_pid => %{shell_config | last_command: 0, success_count: current_count, queue: queue_insert(pending, queue)}}
 
       %{success_count: val} when current_count == val ->
