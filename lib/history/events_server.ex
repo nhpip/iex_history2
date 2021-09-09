@@ -199,6 +199,10 @@ defmodule History.Events.Server do
     end
   end
 
+  def handle_info({:trace, _, :receive, {:evaled, _, %IEx.State{on_eof: :stop_evaluator}}}, process_info) do
+    {:noreply, process_info}
+  end
+
   def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{} = iex_state}}, process_info) do
     {cache_state, count} =  get_iex_state_cache_and_counter(iex_state)
     new_process_info = last_command_result(count, shell_pid, process_info, cache_state)
@@ -362,13 +366,10 @@ defmodule History.Events.Server do
 
       %{success_count: val, last_command: last_command, pending_command: "", store_name: store} = shell_config when current_count == val ->
         History.Store.delete_data(store, last_command)
-        #dle(last_command, nil)
         %{process_info | shell_pid => %{shell_config | last_command: 0}}
 
       %{success_count: val, queue: queue, last_command: last_command, pending_command: pending, store_name: store} = shell_config when current_count == val and cache == :empty_cache ->
         History.Store.delete_data(store, last_command)
-        #dle(last_command, pending)
-        #:persistent_term.put(:os.timestamp(), Process.info(self(), :current_stacktrace))
         %{process_info | shell_pid => %{shell_config | last_command: 0, success_count: current_count, queue: queue_insert(pending, queue)}}
 
       %{success_count: val} when current_count == val ->
@@ -607,11 +608,5 @@ defmodule History.Events.Server do
 
   defp de_alias_command(command, nil), do: command
   defp de_alias_command(command, alias), do: String.replace(command, alias, "History.")
-
-  #defp dle(lc, pend) do
-  #  timestamp = :os.timestamp()
-  #  :persistent_term.put({timestamp,lc,pend}, Process.info(self(), :current_stacktrace))
-  #  IO.inspect({:delete_error, timestamp})
-  #end
 
 end
