@@ -1,5 +1,7 @@
 # history
 
+## NOTE: There was a bug where it would not work on the latest elixir, now fixed
+
 Saves shell history and optionally variable bindings between shell sessions.
 
 Allows the user to display history, and re-issue historic commands, made much
