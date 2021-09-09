@@ -412,8 +412,11 @@ defmodule History do
     Kernel.apply(IO.ANSI, configuration(:colors, @default_colors)[for], [])
 
   @doc false
-  def get_log_path(), do:
-    :filename.basedir(:user_cache, 'erlang-history') |> to_string()
+  def get_log_path() do
+    filename = :filename.basedir(:user_cache, 'erlang-history') |> to_string()
+    File.mkdir_p!(filename)
+    filename
+  end
 
   @doc false
   def my_real_node(), do:
