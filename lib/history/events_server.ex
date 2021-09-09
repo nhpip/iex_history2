@@ -199,15 +199,17 @@ defmodule History.Events.Server do
     end
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{cache: [], counter: count}}}, process_info) do
-    new_process_info = last_command_result(count, shell_pid, process_info, :empty_cache)
+  #def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{cache: [], counter: count}}}, process_info) do
+  def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{} = iex_state}}, process_info) do
+    {cache_state, count} =  get_iex_state_cache_and_counter(iex_state)
+    new_process_info = last_command_result(count, shell_pid, process_info, cache_state)
     {:noreply, new_process_info}
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{counter: count}}}, process_info) do
-    new_process_info = last_command_result(count, shell_pid, process_info, :ok)
-    {:noreply, new_process_info}
-  end
+ # def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{counter: count}}}, process_info) do
+ #   new_process_info = last_command_result(count, shell_pid, process_info, :ok)
+ #   {:noreply, new_process_info}
+ # end
 
   ## This a bit odd, the only ctrl key that works is ctrl-u (of course this was chosen because U == up history). Basically the other
   ## ctrl keys are used for other features, or do strange handling on the shell. Basically user_drv.erl and group.erl take control
@@ -266,6 +268,18 @@ defmodule History.Events.Server do
     {:noreply, process_info}
   end
 
+  defp get_iex_state_cache_and_counter(iex_state) do
+    new_iex_state = Map.from_struct(iex_state)
+    state_map = Map.take(new_iex_state, [:cache, :buffer, :counter])
+    try do
+      state = if state_map.cache == [], do: :empty_cache, else: :ok
+      {state, state_map.counter}
+    catch
+      _,_ ->
+        state = if state_map.buffer == "", do: :empty_cache, else: :ok
+        {state, state_map.counter}
+    end
+  end
 
   defp do_register_new_shell(%{shell_pid: shell_pid,  server_pid: server_pid} = shell_config,
             %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info) do
@@ -354,10 +368,13 @@ defmodule History.Events.Server do
 
       %{success_count: val, last_command: last_command, pending_command: "", store_name: store} = shell_config when current_count == val ->
         History.Store.delete_data(store, last_command)
+        #dle(last_command, nil)
         %{process_info | shell_pid => %{shell_config | last_command: 0}}
 
       %{success_count: val, queue: queue, last_command: last_command, pending_command: pending, store_name: store} = shell_config when current_count == val and cache == :empty_cache ->
         History.Store.delete_data(store, last_command)
+        #dle(last_command, pending)
+        :persistent_term.put(:os.timestamp(), Process.info(self(), :current_stacktrace))
         %{process_info | shell_pid => %{shell_config | last_command: 0, success_count: current_count, queue: queue_insert(pending, queue)}}
 
       %{success_count: val} when current_count == val ->
@@ -556,7 +573,7 @@ defmodule History.Events.Server do
     {String.contains?(command, History.exec_name()), nil}
 
   defp find_history_x_identifiers(command) do
-    {_, tokens} = :elixir.string_to_tokens(to_charlist(command),  1, "", [])
+    tokens = string_to_tokens(command)
     {_, quoted} = Enum.reduce_while(tokens, [],
                     fn({:alias, _, :History} = history, acc) -> {:halt, [history | acc]};
                       (token, acc) -> {:cont, [token | acc]}
@@ -565,6 +582,18 @@ defmodule History.Events.Server do
                   |> :elixir.tokens_to_quoted("", [])
     response = Macro.to_string(quoted) |> String.replace("History", "")
     if response == "", do: nil, else: response
+  end
+
+  defp string_to_tokens(command) do
+    command = to_charlist(command)
+    try do
+      {{_, tokens}, _} = Code.eval_string(":elixir.string_to_tokens(#{inspect command},  1, \"\", [])")
+      tokens
+    catch
+      _,_ ->
+        {{_, tokens}, _} = Code.eval_string(":elixir.string_to_tokens(#{inspect command}, 1,  1, \"\", [])")
+        tokens
+    end
   end
 
   defp modify_command(command, shell_pid, process_info) do
@@ -584,5 +613,11 @@ defmodule History.Events.Server do
 
   defp de_alias_command(command, nil), do: command
   defp de_alias_command(command, alias), do: String.replace(command, alias, "History.")
+
+  #defp dle(lc, pend) do
+  #  timestamp = :os.timestamp()
+  #  :persistent_term.put({timestamp,lc,pend}, Process.info(self(), :current_stacktrace))
+  #  IO.inspect({:delete_error, timestamp})
+  #end
 
 end
