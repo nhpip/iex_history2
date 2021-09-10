@@ -1,6 +1,4 @@
-# history
-
-## NOTE: There was a bug where it would not work on the latest elixir, now fixed
+# history 
 
 Saves shell history and optionally variable bindings between shell sessions.
 
