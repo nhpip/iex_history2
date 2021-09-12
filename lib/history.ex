@@ -263,7 +263,7 @@ defmodule History do
     catch
       _,{:badmatch, nil} -> {:error, :not_found}
       :error,%CompileError{description: descr} -> {:error, descr}
-      e,r -> raise({e, r})
+      e,r -> {e, r}
     end
   end
 
