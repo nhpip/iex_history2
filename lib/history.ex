@@ -262,7 +262,8 @@ defmodule History do
       History.Events.execute_history_item(i)
     catch
       _,{:badmatch, nil} -> {:error, :not_found}
-      _,_ -> {:error, :bad_command}
+      :error,%CompileError{description: descr} -> {:error, :bad_command, descr}
+      e,r -> raise({e, r})
     end
   end
 

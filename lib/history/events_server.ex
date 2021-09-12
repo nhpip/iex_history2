@@ -339,7 +339,7 @@ defmodule History.Events.Server do
 
 
   defp send_to_shell(user_driver, port, _command, :initial_down) do
-    send(user_driver, {port,{:data, [21]}})
+    send(user_driver, {port,{:data, [@history_scan_key]}})
   end
 
   defp send_to_shell(user_driver, port, command, _) do
