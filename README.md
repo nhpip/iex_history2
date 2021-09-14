@@ -5,6 +5,8 @@ Saves shell history and optionally variable bindings between shell sessions.
 Allows the user to display history, and re-issue historic commands, made much
 easier since the variable bindings are saved.
 
+Some screen shots can be found here: [Images](https://github.com/nhpip/history/wiki)
+
 For ease History can be enabled in `~/.iex.exs` for example:
 
     Code.append_path("~/github/history/_build/dev/lib/history/ebin")
