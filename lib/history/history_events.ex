@@ -175,10 +175,11 @@ defmodule History.Events do
 
   @doc false
   def do_get_history_registration(store_name, start, stop) do
+    quantity = stop - start
     History.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
     |> Enum.map(fn({_date, cmd}) -> String.trim(cmd) end)
-    |> Enum.slice(start, stop)
+    |> Enum.slice(start, quantity)
     |> Enum.reverse()
   end
 
@@ -204,12 +205,13 @@ defmodule History.Events do
   defp do_get_history_range(start, stop) when start >= 1 and stop > start do
     start = start - 1
     stop = stop - 1
+    quantity = stop - start
     history_size = state(:number)
     if start > history_size or stop > history_size,
        do: raise(%ArgumentError{message: "Values out of range, only #{history_size} entries exist"})
     History.configuration(:scope, :local)
     |> do_get_history()
-    |> Enum.slice(start, stop)
+    |> Enum.slice(start, quantity)
   end
 
   defp do_get_history_range(_start, _stop), do:
