@@ -178,7 +178,7 @@ Initializes the History app. Takes the following parameters:
 ### History.state()
 Displays the current state:
 ```
-    History version 3.0 is 
+    History version 4.0 is 
     enabled:
       Current history is 199 commands in size.
       Current bindings are 153 variables in size.
@@ -187,11 +187,27 @@ Displays the current state:
 ### History.clear()
 Clears the history and bindings. If scope is  :global the IEx session needs restarting for the changes to take effect.
 
+### History.clear_history(range)
+Clears the history only, if no argument all history is cleared, else history from 1 to value is cleared
+
+### History.clear_bindings()
+Clears bindings only
+
+### History.unbind(vars)
+Unbinds a variable or list of variables, varibales should be expressed as atoms
+
 ### History.stop_clear()
 Clears the history and bindings then stops the service. If scope is :global the IEx session needs restarting for the changes to take effect.
 
 ### History.configuration()
 Displays the current conifuration
+
+### History.save_config(filename)
+Saves the configuration to filename
+
+### History.load_config(filename)
+Loads the configuration from filename. 
+NOTE: All changes may not be applied, to do this specify the filename in `History.initialize/1` instead of a config keyword list
 
 ### History.configure/2
 Allows the following options to be changed, but not saved:
