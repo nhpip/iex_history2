@@ -120,7 +120,7 @@ defmodule History do
     A word about aliases. Rather than using something like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()}, please use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()} instead.
   """
 
-  @version "3.0"
+  @version "4.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
@@ -155,11 +155,14 @@ defmodule History do
         ]
       ]
 
+    Alternatively a filename can be given that was saved with #{IO.ANSI.cyan()}History.save_config()#{IO.ANSI.white()}
+
     #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} can be one of #{IO.ANSI.cyan()}:local, :global#{IO.ANSI.white()} or a #{IO.ANSI.cyan()}node()#{IO.ANSI.white()} name
   """
-  def initialize(config \\ []) do
+  def initialize(config_or_filename \\ []) do
+    config = do_load_config(config_or_filename)
     if history_configured?(config) && not is_enabled?() do
-      new_config = save_config(config)
+      new_config = init_save_config(config)
       History.Bindings.inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
@@ -292,6 +295,25 @@ defmodule History do
   end
 
   @doc """
+    Clears the history only. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
+    the IEx session needs restarting for the changes to take effect. If a value is passed it will clear that many history
+    entries from start, otherwise the entire history is cleared.
+  """
+  def clear_history(val \\ :all) do
+    History.Events.clear_history(val)
+    if History.configuration(:scope, :local) == :global && val == :all, do:
+      IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+    :ok
+  end
+
+  @doc """
+    Clears the bindings.
+  """
+  def clear_bindings() do
+    History.Bindings.clear()
+  end
+
+  @doc """
       Clears the history and bindings then stops the service. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()} :global#{IO.ANSI.white()} the IEx session needs restarting for the changes to take effect.
   """
   def stop_clear() do
@@ -313,11 +335,34 @@ defmodule History do
     Returns the current shell bindings.
   """
   def get_bindings() do
-    try do
-      :ets.tab2list(Process.get(:history_bindings_ets_label))
-    catch
-      _,_ -> []
-    end
+    History.Bindings.get_bindings()
+  end
+
+  @doc """
+    Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
+  """
+  def unbind(vars) when is_list(vars), do:
+    History.Bindings.unbind(vars)
+  def unbind(var), do:
+    unbind([var])
+
+  @doc """
+    Saves the current configuration to file.
+  """
+  def save_config(filename) do
+    data = :io_lib.format("~p.", [configuration()]) |> List.flatten()
+    :file.write_file(filename, data)
+  end
+
+  @doc """
+    Loads the current configuration to file #{IO.ANSI.cyan()}History.save_config()#{IO.ANSI.white()}.
+
+    NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to #{IO.ANSI.cyan()}History.initialize()#{IO.ANSI.white()}
+  """
+  def load_config(filename) do
+    config = do_load_config(filename)
+    Process.put(:history_config, config)
+    config
   end
 
   @doc """
@@ -483,7 +528,15 @@ defmodule History do
        do: raise(%ArgumentError{message: "History is not enabled"})
   end
 
-  defp save_config(config) do
+  defp do_load_config(filename) when is_binary(filename) do
+    {:ok, [config]} = :file.consult(filename)
+    config
+  end
+
+  defp do_load_config(config), do:
+    config
+
+  defp init_save_config(config) do
     infinity_limit = History.Events.infinity_limit()
     colors = Keyword.get(config, :colors, @default_colors)
     new_colors = Enum.map(@default_colors,

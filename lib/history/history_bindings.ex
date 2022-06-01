@@ -64,10 +64,32 @@ defmodule History.Bindings do
   def do_initialize(_), do: :not_ok
 
   @doc false
+  def get_bindings() do
+    try do
+      :ets.tab2list(Process.get(:history_bindings_ets_label))
+    catch
+      _,_ -> []
+    end
+  end
+
+  @doc false
   def get_value(label, ets_name) do
     case :ets.lookup(ets_name, label) do
       [{_, value}] -> value
       _ -> nil
+    end
+  end
+
+  @doc false
+  def unbind(vars) do
+    save_bindings? = History.configuration(:save_bindings, true)
+    if save_bindings? do
+      send_msg({:unbind, vars, self()})
+      wait_rsp(:ok_done)
+      set_bindings_for_shell()
+      :ok
+    else
+      :bindings_disabled
     end
   end
 
@@ -168,6 +190,15 @@ defmodule History.Bindings do
         History.Store.close_store(db_labels.store_name)
         send(pid, :ok_done)
 
+      {:unbind, vars, pid} ->
+        Enum.map(vars, fn label ->
+          :ets.delete(db_labels.ets_name, label)
+          History.Store.delete_data(db_labels.store_name, label)
+        end)
+        size = :ets.info(config.db_labels.ets_name, :size)
+        send(pid, :ok_done)
+        binding_evaluator_loop(%{config | binding_count: size})
+
       :check_bindings ->
         new_bindings = get_bindings_from_shell(config)
         persist_bindings(new_bindings, db_labels)
@@ -187,6 +218,10 @@ defmodule History.Bindings do
   defp persist_bindings(bindings, %{ets_name: ets_name, store_name: store_name}) do
     Enum.map(bindings, fn {label, value} ->
       case :ets.lookup(ets_name, label) do
+        _ when value == :could_not_bind ->
+          :ets.delete(ets_name, label)
+          History.Store.delete_data(store_name, label)
+
         [{_, ^value}] ->
           :ok
 
@@ -224,6 +259,16 @@ defmodule History.Bindings do
 
   defp clear_bindings_from_shell() do
     inject_command("IEx.Evaluator.init(:ack, History.Bindings.find_server(), Process.group_leader(), [binding: []])")
+  end
+
+  defp set_bindings_for_shell() do
+    ets_name = Process.get(:history_bindings_ets_label)
+    clear_bindings_from_shell()
+    bindings = :ets.foldl(
+                   fn {label, _value}, acc ->
+                     ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
+                   end, [], ets_name) |> List.to_string()
+    inject_command(bindings <> " :ok")
   end
 
   defp make_reg_name() do
