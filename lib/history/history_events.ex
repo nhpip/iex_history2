@@ -114,6 +114,18 @@ defmodule History.Events do
   end
 
   @doc false
+  def clear_history(range) do
+    if History.configuration(:scope, :local) != :global do
+      Server.clear_history(range)
+    else
+      if range == :all, do:
+        History.get_log_path() <> "/erlang-shell*"
+        |> Path.wildcard()
+        |> Enum.each(fn file -> File.rm(file) end)
+    end
+  end
+
+  @doc false
   def stop_clear() do
     if History.configuration(:scope, :local) != :global do
       Server.stop_clear()

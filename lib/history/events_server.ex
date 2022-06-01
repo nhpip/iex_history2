@@ -57,6 +57,11 @@ defmodule History.Events.Server do
   end
 
   @doc false
+  def clear_history(range) do
+    GenServer.call(__MODULE__, {:clear_history, range})
+  end
+
+  @doc false
   def stop_clear() do
     GenServer.call(__MODULE__, {:stop_clear, self()})
   end
@@ -93,6 +98,12 @@ defmodule History.Events.Server do
       _ ->
         {:reply, :ok_done, process_info}
     end
+  end
+
+  def handle_call({:clear_history, range}, _from, process_info) do
+    new_process_info = %{process_info | limit: range}
+    apply_table_limits(new_process_info, :requested)
+    {:reply, :ok_done, process_info}
   end
 
   def handle_call(:stop_clear, _from, process_info) do
@@ -233,11 +244,12 @@ defmodule History.Events.Server do
     {:noreply, new_process_info}
   end
 
-  def handle_info({:DOWN, _, :process, shell_pid, :noproc}, %{scope: scope, store_count: store_count} = process_info) do
+  def handle_info({:DOWN, _, :process, shell_pid, _}, %{scope: scope, store_count: store_count} = process_info) do
     case Map.get(process_info, shell_pid) do
-      %{store_name: store_name} ->
+      %{store_name: store_name, key_buffer_history_pid: kbh_pid} ->
         store_count = History.Store.close_store(store_name, scope, store_count)
         new_process_info = Map.delete(process_info, shell_pid)
+        Process.exit(kbh_pid, :down)
         {:noreply, %{new_process_info | store_count: store_count}}
       _ ->
         {:noreply, process_info}
@@ -533,24 +545,27 @@ defmodule History.Events.Server do
     end
   end
 
-  defp apply_table_limits(%{limit: limit} = process_info) do
+  defp apply_table_limits(%{limit: limit} = process_info, type \\ :automatic) do
     Enum.each(process_info,
       fn({pid, %{store_name: name} = _map}) ->
         current_size = History.Store.info(name, :size)
-        if current_size >= limit,
-           do: do_apply_table_limits(pid, name, current_size, limit)
+        limit = if limit == :all, do: current_size, else: limit
+        if current_size >= limit && type == :automatic,
+           do: do_apply_table_limits(pid, name, current_size, limit, type)
+        if type == :requested,
+          do: do_apply_table_limits(pid, name, current_size, limit, type)
         (x)-> x
       end)
   end
 
-  defp do_apply_table_limits(pid, name, current_size, limit) do
+  defp do_apply_table_limits(pid, name, current_size, limit, type) do
     table_name = inspect(pid) |> String.to_atom()
     if :ets.info(table_name) == :undefined do
       :ets.new(table_name, [:named_table, :ordered_set, :public])
       History.Store.foldl(name, [], fn({key, _}, _) -> :ets.insert(table_name, {key, :ok}) end)
     end
-    remove = round(limit * @table_limit_exceeded_factor) + current_size - limit
-    Enum.reduce(1..remove, :ets.first(table_name),
+    remove = if type == :automatic, do: round(limit * @table_limit_exceeded_factor) + current_size - limit, else: min(limit, current_size)
+    Enum.reduce(0..remove, :ets.first(table_name),
       fn(_, key) ->
         :ets.delete(table_name, key)
         History.Store.delete_data(name, key)
