@@ -311,6 +311,7 @@ defmodule History do
   """
   def clear_bindings() do
     History.Bindings.clear()
+    :ok
   end
 
   @doc """
