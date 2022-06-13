@@ -48,7 +48,7 @@ defmodule History.Events do
     History.configuration(:scope, :local)
     |> do_get_history()
     |> pp_history_items(1)
-    :ok
+    nil 
   end
 
   @doc false
@@ -216,7 +216,7 @@ defmodule History.Events do
 
   defp do_get_history_range(start, stop) when start >= 1 and stop > start do
     start = start - 1
-    stop = stop - 1
+    stop = stop
     quantity = stop - start
     history_size = state(:number)
     if start > history_size or stop > history_size,
@@ -239,6 +239,7 @@ defmodule History.Events do
         display_formatted_date(count, date, String.replace(new_command, ~r/\s+/, " "))
         count + 1
       end)
+      nil
   end
 
   defp get_command_width() do
