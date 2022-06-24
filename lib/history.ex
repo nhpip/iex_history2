@@ -31,7 +31,7 @@ defmodule History do
 
     For ease History can be enabled in `~/.iex.exs` for example:
 
-      Code.append_path("~/github/history/_build/dev/lib/history/ebin")
+      Code.append_path("~/github/history/_build/dev/lib/iex_history/ebin")
       History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
     Of course `Code.append_path ` may not be required depending on how the project is imported.
