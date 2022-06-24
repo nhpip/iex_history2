@@ -120,7 +120,7 @@ defmodule History do
     A word about aliases. Rather than using something like `alias History, as: H`, please use `History.alias(H)` instead.
   """
 
-  @version "4.0"
+  @version "4.2"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
