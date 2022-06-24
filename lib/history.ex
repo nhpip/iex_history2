@@ -210,7 +210,7 @@ defmodule History do
         Current bindings are 153 variables in size.
   """
   def state() do
-    IO.puts("`History version #{IO.ANSI.red()}#{@version}` is enabled:")
+    IO.puts("History version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
     IO.puts("  #{History.Events.state()}.")
     IO.puts("  #{History.Bindings.state()}.")
   end
