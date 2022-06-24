@@ -29,12 +29,12 @@ defmodule History do
     Allows the user to display history, and re-issue historic commands, made much easier since the
     variable bindings are saved.
 
-    For ease History can be enabled in #{IO.ANSI.cyan()}~/.iex.exs#{IO.ANSI.white()} for example:
+    For ease History can be enabled in `~/.iex.exs` for example:
 
       Code.append_path("~/github/history/_build/dev/lib/history/ebin")
       History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
-    Of course #{IO.ANSI.cyan()}Code.append_path #{IO.ANSI.white()} may not be required depending on how the project is imported.
+    Of course `Code.append_path ` may not be required depending on how the project is imported.
 
     The following options can be set:
 
@@ -57,18 +57,18 @@ defmodule History do
         ]
       ]
 
-    #{IO.ANSI.cyan()}:hide_history_commands #{IO.ANSI.white()} This will prevent all calls to #{IO.ANSI.cyan()}History.*#{IO.ANSI.white()} from been saved.
+    `:hide_history_commands ` This will prevent all calls to `History.*` from been saved.
 
-    NOTE: #{IO.ANSI.cyan()}History.x/1#{IO.ANSI.white()} is always hidden. Scope of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} will only hide them from output, otherwise they will not be saved.
+    NOTE: `History.x/1` is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
 
-    #{IO.ANSI.cyan()}:save_invalid_results #{IO.ANSI.white()} If set to false, the default, commands that were evaluated incorrectly will not be saved.
+    `:save_invalid_results ` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
-    #{IO.ANSI.cyan()}:key_buffer_history #{IO.ANSI.white()} If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
+    `:key_buffer_history ` If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
     Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down.
     This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating
-    #{IO.ANSI.cyan()}@history_buffer_size#{IO.ANSI.white()} in #{IO.ANSI.cyan()}events_server.ex#{IO.ANSI.white()}. This will also not duplicate back to back identical commands.
+    `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
 
-    #{IO.ANSI.cyan()}:prepend_identifiers #{IO.ANSI.white()} If this is enabled it will prepend identifiers when a call to #{IO.ANSI.cyan()}x = History(val)#{IO.ANSI.white()} is issued.
+    `:prepend_identifiers ` If this is enabled it will prepend identifiers when a call to `x = History(val)` is issued.
 
     For example:
 
@@ -103,21 +103,21 @@ defmodule History do
           2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
 
 
-    #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} can be one of #{IO.ANSI.cyan()}:local, :global #{IO.ANSI.white()}or a #{IO.ANSI.cyan()}node name#{IO.ANSI.white()}
+    `scope` can be one of `:local, :global `or a `node name`
 
-    If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:local#{IO.ANSI.white()} (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
+    If `scope` is `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
 
-    If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}node()#{IO.ANSI.white()} (e.g. #{IO.ANSI.cyan()}:mgr@localhost#{IO.ANSI.white()}) history will only be active on that shell
+    If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on that shell
 
-    If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
+    If `scope` is `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
-    Furthermore, if a #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} of #{IO.ANSI.cyan()}:global#{IO.ANSI.white()} is selected following kernel option must be set, either directly as VM options or via an environment variable:
+    Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
 
       export ERL_AFLAGS="-kernel shell_history enabled"
 
       --erl "-kernel shell_history enabled"
 
-    A word about aliases. Rather than using something like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()}, please use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()} instead.
+    A word about aliases. Rather than using something like `alias History, as: H`, please use `History.alias(H)` instead.
   """
 
   @version "4.0"
@@ -155,9 +155,9 @@ defmodule History do
         ]
       ]
 
-    Alternatively a filename can be given that was saved with #{IO.ANSI.cyan()}History.save_config()#{IO.ANSI.white()}
+    Alternatively a filename can be given that was saved with `History.save_config()`
 
-    #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} can be one of #{IO.ANSI.cyan()}:local, :global#{IO.ANSI.white()} or a #{IO.ANSI.cyan()}node()#{IO.ANSI.white()} name
+    `scope` can be one of `:local, :global` or a `node()` name
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
@@ -174,8 +174,8 @@ defmodule History do
   end
 
   @doc """
-    If you want to setup an alias like #{IO.ANSI.cyan()}alias History, as: H#{IO.ANSI.white()} rather than using #{IO.ANSI.cyan()}alias/2#{IO.ANSI.white()}
-    from the shell, please use this function instead. So to create an alias of #{IO.ANSI.cyan()}H#{IO.ANSI.white()} use #{IO.ANSI.cyan()}History.alias(H)#{IO.ANSI.white()}.
+    If you want to setup an alias like `alias History, as: H` rather than using `alias/2`
+    from the shell, please use this function instead. So to create an alias of `H` use `History.alias(H)`.
     This allows aliased functions to be handled correctly.
   """
   def alias(name) when is_atom(name) do
@@ -210,7 +210,7 @@ defmodule History do
         Current bindings are 153 variables in size.
   """
   def state() do
-    IO.puts("#{IO.ANSI.white()}History version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
+    IO.puts("`History version #{IO.ANSI.red()}#{@version}` is enabled:")
     IO.puts("  #{History.Events.state()}.")
     IO.puts("  #{History.Bindings.state()}.")
   end
@@ -283,7 +283,7 @@ defmodule History do
   end
 
   @doc """
-    Clears the history and bindings. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
+    Clears the history and bindings. If `scope` is `:global`
     the IEx session needs restarting for the changes to take effect.
   """
   def clear() do
@@ -295,7 +295,7 @@ defmodule History do
   end
 
   @doc """
-    Clears the history only. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()}:global#{IO.ANSI.white()}
+    Clears the history only. If `scope` is `:global`
     the IEx session needs restarting for the changes to take effect. If a value is passed it will clear that many history
     entries from start, otherwise the entire history is cleared.
   """
@@ -315,7 +315,7 @@ defmodule History do
   end
 
   @doc """
-      Clears the history and bindings then stops the service. If #{IO.ANSI.cyan()}scope#{IO.ANSI.white()} is #{IO.ANSI.cyan()} :global#{IO.ANSI.white()} the IEx session needs restarting for the changes to take effect.
+      Clears the history and bindings then stops the service. If `scope` is ` :global` the IEx session needs restarting for the changes to take effect.
   """
   def stop_clear() do
     History.Events.stop_clear()
@@ -326,7 +326,7 @@ defmodule History do
   end
 
   @doc """
-    Returns #{IO.ANSI.cyan()}true#{IO.ANSI.white()} or #{IO.ANSI.cyan()}false#{IO.ANSI.white()} depending on if history is enabled.
+    Returns `true` or `false` depending on if history is enabled.
   """
   def is_enabled?() do
     Process.get(:history_is_enabled, false)
@@ -356,9 +356,9 @@ defmodule History do
   end
 
   @doc """
-    Loads the current configuration to file #{IO.ANSI.cyan()}History.save_config()#{IO.ANSI.white()}.
+    Loads the current configuration to file `History.save_config()`.
 
-    NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to #{IO.ANSI.cyan()}History.initialize()#{IO.ANSI.white()}
+    NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to `History.initialize()`
   """
   def load_config(filename) do
     config = do_load_config(filename)
