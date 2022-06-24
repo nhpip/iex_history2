@@ -29,7 +29,11 @@ defmodule History.MixProject do
   end
 
   defp description() do
-    "A few sentences (a paragraph) describing the project."
+    "Saves shell history and variable bindings between shell sessions.
+
+     Allows the user to display history in a more intuitive and cleaner way than the default.
+  
+     Historic actions can be viewed, replayed or copied. Scrolling through history is command, not line based."
   end
 
   defp package() do
