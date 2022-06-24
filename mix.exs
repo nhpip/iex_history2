@@ -8,7 +8,7 @@ defmodule History.MixProject do
       elixir: "~> 1.10",
       description: description(),
       package: package(),
-      name: "History",	
+      name: "Improved History",	
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
