@@ -251,11 +251,6 @@ defmodule History.Events.Server do
     new_process_info = queue_display_handler(driver_pid, process_info, :enter)
     {:noreply, new_process_info}
   end
-  
- # def handle_info({:trace, leader_pid, :receive, {_, {:data, @enter_key}}}, process_info) do
- #   new_process_info = queue_display_handler(leader_pid, process_info, :return)
- #   {:noreply, new_process_info}
- # end
 
   def handle_info({:DOWN, _, :process, shell_pid, _}, %{scope: scope, store_count: store_count} = process_info) do
     case Map.get(process_info, shell_pid) do
@@ -327,13 +322,16 @@ defmodule History.Events.Server do
        {_, pid, :receive, {_, {:data, @history_scan_key}}} -> 
           send(dest, {:scan_key, pid})
           do_ctrl_key_tracer(dest)
+          
         {_, pid, :receive, {_, {:data, @history_down_key}}} -> 
           send(dest, {:down_key, pid})
           do_ctrl_key_tracer(dest)
+          
         {_, pid, :receive, {_, {:data, @enter_key}}} -> 
           send(dest, {:enter_key, pid})
           do_ctrl_key_tracer(dest)
-          _ ->
+        
+        _ ->
           do_ctrl_key_tracer(dest)    
       end
   end
@@ -379,16 +377,17 @@ defmodule History.Events.Server do
         remote_key_buffer_history_loop(server_pid, dest_pid)
     end
   end
-
+  
   defp send_to_shell(user_driver, user_driver_group, command, last_command, :scan_action) do
     send(user_driver, {user_driver_group, {:requests, 
                          [{:move_rel, -String.length(last_command)}, 
                          :delete_after_cursor, 
-                         {:insert_chars_over, :unicode, command}]}})
+                         {:insert_chars_over, :unicode, String.replace(command, ~r/\s+/, " ")}
+                         ]}})
   end
   
   defp send_to_shell(user_driver, user_driver_group, command, _) do
-    send(user_driver_group, {user_driver, {:data, command}})
+    send(user_driver_group, {user_driver, {:data, String.replace(command, ~r/\s+/, " ")}})
   end
 
   defp paste_command(command, shell_pid, process_info) do
@@ -409,11 +408,11 @@ defmodule History.Events.Server do
               
       {_,  %{last_scan_command: ""}} when operation == :enter ->
         process_info
-        
+ 
      {shell_pid,  %{queue: {_sp, queue},  user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: command} = shell_config} when operation == :enter ->
-       send_to_shell(user_driver, user_driver_group, command <> "\n", nil)
-       %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: ""}}
-
+        send_to_shell(user_driver, user_driver_group, command, nil)
+        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: ""}}
+  
       {shell_pid,  %{queue: {sp, queue}, user_driver: user_driver, user_driver_group: user_driver_group, last_direction: last_direction, last_scan_command: last_command} = shell_config} ->
         queue_size = Enum.count(queue)
         search_pos = get_search_position(sp, queue_size, last_direction, operation)

@@ -46,6 +46,7 @@ defmodule History do
         command_display_width: int,
         save_invalid_results: false,
         key_buffer_history: true,
+        import: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -119,18 +120,18 @@ defmodule History do
 
   """
 
-  @version "4.2"
+  @version "5.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @excluded_history_functions [".h(", ".x()", ".c("]
-  @excluded_history_imports [ "hc(", "hl(", "hs(", "hx("]
+  @excluded_history_imports [ "hc(", "hl(", "hs(", "hx(", "hb("]
   @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
   @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
-                   show_date: true, save_bindings: true, command_display_width: @default_width,
+                   show_date: true, save_bindings: true, command_display_width: @default_width, import: true,
                    save_invalid_results: false, key_buffer_history: true, colors: @default_colors]
 
   @doc """
@@ -145,6 +146,7 @@ defmodule History do
         command_display_width: :int,
         save_invalid_results: false,
         show_date: true,
+        import: true,
         save_bindings: true,
         colors: [
           index: :red,
@@ -165,7 +167,8 @@ defmodule History do
       :dbg.stop()
       new_config = init_save_config(config)
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
-      inject_command("import History, only: [hl: 0, hs: 1, hs: 2, hc: 1, hx: 1]")
+      if Keyword.get(new_config, :import),
+        do: inject_command("import History, only: [hl: 0, hl: 1, hs: 1, hs: 2, hc: 1, hx: 1, hb: 0, hi: 0]")
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
       |> set_enabled()
@@ -230,6 +233,15 @@ defmodule History do
   end
 
   @doc """
+    Displays the entire history from last position back (negative number).
+  """
+  def hl(val) when val > 0,
+    do: hs(-val)
+    
+  def hl(val),
+    do: hs(val)
+      
+  @doc """
     If the argument is a string it displays the history that contain or match entirely the passed argument.
     If the argument is a positive integer it displays the command at that index.
     If the argument is a negative number it displays the history that many items from the end.
@@ -283,6 +295,18 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
+  
+  @doc """
+    Show bindings
+  """
+  def hb(),
+    do: get_bindings()
+  
+  @doc """
+    Show history information summary
+  """
+  def hi(),
+    do: state()
   
   ###
   # Backwards compatibility
