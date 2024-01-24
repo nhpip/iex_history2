@@ -117,15 +117,15 @@ defmodule History do
 
       --erl "-kernel shell_history enabled"
 
-    A word about aliases. Rather than using something like `alias History, as: H`, please use `History.alias(H)` instead.
   """
 
   @version "4.2"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
-  @excluded_functions [".h", ".x", ".c(", ".c "]
-  @exclude_from_history for f <- @excluded_functions, do: @module_name <> f
+  @excluded_history_functions [".h(", ".x()", ".c("]
+  @excluded_history_imports [ "hc(", "hl(", "hs(", "hx("]
+  @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
@@ -162,13 +162,15 @@ defmodule History do
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
     if history_configured?(config) && not is_enabled?() do
+      :dbg.stop()
       new_config = init_save_config(config)
-      History.Bindings.inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
+      inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
+      inject_command("import History, only: [hl: 0, hs: 1, hs: 2, hc: 1, hx: 1]")
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
       |> set_enabled()
       |> present_welcome()
-    else
+      else
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
     end
   end
@@ -182,7 +184,7 @@ defmodule History do
     if Process.get(:history_alias) == nil do
       string_name = Atom.to_string(name) |> String.replace("Elixir.", "")
       inject_command_all_servers("alias(#{__MODULE__}, as: #{string_name})")
-      excluded = for fun <- @excluded_functions, do: string_name <> fun
+      excluded = for fun <- @excluded_history_functions, do: string_name <> fun
       base_name = string_name <> "."
       Process.put(:history_alias, base_name)
       History.Events.send_message({:module_alias, base_name})
@@ -214,11 +216,11 @@ defmodule History do
     IO.puts("  #{History.Events.state()}.")
     IO.puts("  #{History.Bindings.state()}.")
   end
-
+   
   @doc """
     Displays the entire history.
   """
-  def h() do
+  def hl() do
     is_enabled!()
     try do
       History.Events.get_history()
@@ -232,10 +234,10 @@ defmodule History do
     If the argument is a positive integer it displays the command at that index.
     If the argument is a negative number it displays the history that many items from the end.
   """
-  @spec h(String.t() | integer) :: atom
-  def h(val)
+  @spec hs(String.t() | integer) :: atom
+  def hs(val)
 
-  def h(match) do
+  def hs(match) do
     is_enabled!()
     try do
       History.Events.get_history_item(match)
@@ -247,7 +249,7 @@ defmodule History do
   @doc """
     Specify a range, the atoms :start and :stop can also be used.
   """
-  def h(start, stop) do
+  def hs(start, stop) do
     is_enabled!()
     try do
       History.Events.get_history_items(start, stop)
@@ -255,11 +257,11 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
-
+  
   @doc """
     Invokes the command at index 'i'.
   """
-  def x(i) do
+  def hx(i) do
     is_enabled!()
     try do
       History.Events.execute_history_item(i)
@@ -273,7 +275,7 @@ defmodule History do
   @doc """
     Copies the command at index 'i' and pastes it to the shell
   """
-  def c(i) do
+  def hc(i) do
     is_enabled!()
     try do
       History.Events.copy_paste_history_item(i)
@@ -281,7 +283,16 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
-
+  
+  ###
+  # Backwards compatibility
+  ###
+  def h(), do: hl()
+  def h(val), do: hs(val)
+  def h(start, stop), do: hs(start, stop)
+  def c(val), do: hc(val)
+  def x(val), do: hx(val)
+  
   @doc """
     Clears the history and bindings. If `scope` is `:global`
     the IEx session needs restarting for the changes to take effect.
@@ -478,7 +489,7 @@ defmodule History do
   @doc false
   def exclude_from_history() do
     aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ aliases
+    @exclude_from_history ++ @excluded_history_imports ++ aliases
   end
 
   @doc false
@@ -519,8 +530,8 @@ defmodule History do
   defp inject_command_all_servers(command) do
     Enum.each(Process.list(),
                   fn(pid) ->
-                      if (server = Process.info(pid)[:dictionary][:iex_server]) != nil,
-                         do: send(pid, {:eval, server, command, %IEx.State{}})
+                      if (server = :group.whereis_shell()) != nil,
+                         do: send(pid, {:eval, server, command, 1, {"", :other}})
                   end)
   end
 
@@ -582,7 +593,7 @@ defmodule History do
     :ok
 
   defp present_welcome(_), do:
-    History.Bindings.inject_command("History.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
+    inject_command("History.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
 
   defp set_enabled(config) do
     Process.put(:history_is_enabled, true)

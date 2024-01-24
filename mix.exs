@@ -5,7 +5,7 @@ defmodule History.MixProject do
     [
       app: :iex_history,
       version: "4.2.0",
-      elixir: "~> 1.10",
+      elixir: "~> 1.16.0-otp-26",
       description: description(),
       package: package(),
       name: "IEx History",	
@@ -17,7 +17,7 @@ defmodule History.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:iex]
+      extra_applications: [:iex, :runtime_tools]
     ]
   end
 

@@ -142,7 +142,7 @@ defmodule History.Events do
     count = case Server.get_state() do
       %{} = map ->
         Enum.map(map,
-              fn({_pid, %{node: node, size: size}}) ->
+              fn({_pid, %{beam_node: node, size: size}}) ->
                 if node ==  my_node,
                    do: [node: node, size: size],
                    else: :ok;
@@ -285,15 +285,16 @@ defmodule History.Events do
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
-    group_leader = Process.group_leader()
-    {user_driver, port} = get_shell_info()
-    server_node = :erlang.node(group_leader)
-    server_pid = Process.info(self())[:dictionary][:iex_server]
+    server_pid = :group.whereis_shell()
+    server_node = :erlang.node(server_pid)
+    beam_node = :erlang.node(:erlang.group_leader())
+    user_driver_group = :rpc.call(beam_node, :user_drv, :whereis_group, [])
+    user_driver =  :rpc.call(beam_node, Process, :whereis, [:user_drv])
 
     %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
-      node: server_node, size: 0, prepend_ids: nil, pending_command: "", user_driver: user_driver,
-      port: port, success_count: nil, last_command: nil, group_leader: group_leader, queue: {0, []},
-      scan_direction: nil, last_direction: :up, key_buffer_history_pid: nil}
+      size: 0, prepend_ids: nil, pending_command: "",  node: server_node, beam_node: beam_node, user_driver: user_driver,
+      port: :port, success_count: nil, last_command: nil, queue: {0, []}, user_driver_group: user_driver_group,
+      scan_direction: nil, last_direction: :up, key_buffer_history_pid: nil, last_scan_command: ""}
   end
 
   defp register_or_start_tracer_service(local_shell_state) do
@@ -316,9 +317,11 @@ defmodule History.Events do
     Server.start_link(process_info_state)
   end
 
-  defp get_shell_info() do
+  def get_shell_info() do
     user_driver = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [Process.group_leader()])[:dictionary][:user_drv]
+IO.inspect(user_driver)
     link_info = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [user_driver])[:links]
+IO.inspect(link_info)
     port = Enum.filter(link_info, &is_port(&1)) |> hd()
     {user_driver, port}
   end

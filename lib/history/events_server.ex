@@ -23,18 +23,18 @@
 #
 
 defmodule History.Events.Server do
-
+  
   @size_check_interval 60 * 1000
   @table_limit_exceeded_factor 0.1
 
   @history_buffer_size 75
   @save_immediate_buffer_duplicates false
-  @history_scan_key  21     # ctrl+u
-  @history_down_key 11    # ctrl+k
-  @enter_key '\r'
 
+  @history_scan_key  <<21>>     # ctrl+u
+  @history_down_key <<11>>    # ctrl+k
+  @enter_key "\r"
+  
   use GenServer
-
 
   @doc false
   def register_new_shell(shell_config) do
@@ -161,10 +161,10 @@ defmodule History.Events.Server do
   def handle_cast({:key_buffer_history, false}, %{key_buffer_history: true} = process_info) do
     new_process_info =
       Enum.reduce(process_info, process_info,
-              fn({shell_pid, %{group_leader: group_leader, key_buffer_history_pid: kbh_pid} = shell_config}, process_info) when is_pid(shell_pid) ->
+              fn({shell_pid, %{server_pid: server_pid, key_buffer_history_pid: kbh_pid} = shell_config}, process_info) when is_pid(shell_pid) ->
                     if is_pid(kbh_pid),
                        do: send(kbh_pid, :exit),
-                       else: :erlang.trace(group_leader, false, [:receive])
+                       else: :erlang.trace(server_pid, false, [:receive])
                     Map.put(process_info, shell_pid, %{shell_config | queue: {0, []}, key_buffer_history_pid: nil});
                 (_, process_info) ->
                     process_info
@@ -199,8 +199,17 @@ defmodule History.Events.Server do
   end
 
 
-  def handle_info({:trace, _, :send, {:eval, _, command, _}, shell_pid}, %{module_alias: alias} = process_info) do
-    case validate_command(de_alias_command(command, alias), shell_pid, process_info) do
+  def handle_info({:trace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_config when is_map(shell_config) ->
+        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: shell_config.pending_command <> command}}}
+      _ ->
+        {:noreply, process_info}
+    end
+  end
+
+  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :ok, _}}, process_info) do
+    case validate_command(process_info, shell_pid) do
       {true, new_command, new_process_info} ->
         new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
         {:noreply, new_process_info}
@@ -210,14 +219,13 @@ defmodule History.Events.Server do
     end
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, _, %IEx.State{on_eof: :stop_evaluator}}}, process_info) do
-    {:noreply, process_info}
-  end
-
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, %IEx.State{} = iex_state}}, process_info) do
-    {cache_state, count} =  get_iex_state_cache_and_counter(iex_state)
-    new_process_info = last_command_result(count, shell_pid, process_info, cache_state)
-    {:noreply, new_process_info}
+  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :error, _}}, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_config when is_map(shell_config) ->
+        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+      _ -> 
+        {:noreply, process_info}  
+      end
   end
 
   ## This a bit odd, the only ctrl key that works is ctrl-u (of course this was chosen because U == up history). Basically the other
@@ -229,20 +237,25 @@ defmodule History.Events.Server do
   ## historic commands to the shell. It knows to go up in the history not based on the ctrl-u been pressed but based on the state, after a single "up" the
   ## state is set to nil (which is assumed to also be up). To go down ctrl-k is pressed, we mark the state as down and then inject a
   ## ctrl-u to user_drv. The ctrl-u is captured by this code, except now the state says go down through history.
-  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_scan_key]}}}, %{key_buffer_history: true} = process_info) do
-    new_process_info = queue_display_handler(leader_pid, process_info, :scan)
+  def handle_info({:scan_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+    new_process_info = queue_display_handler(driver_pid, process_info, :up)
     {:noreply, new_process_info}
   end
 
-  def handle_info({:trace, leader_pid, :receive, {_, {:data, [@history_down_key]}}}, %{key_buffer_history: true} = process_info) do
-    new_process_info = queue_display_handler(leader_pid, process_info, :initial_down)
+  def handle_info({:down_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+    new_process_info = queue_display_handler(driver_pid, process_info, :down)
     {:noreply, new_process_info}
   end
 
-  def handle_info({:trace, leader_pid, :receive, {_, {:data, @enter_key}}}, process_info) do
-    new_process_info = queue_display_handler(leader_pid, process_info, :return)
+  def handle_info({:enter_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+    new_process_info = queue_display_handler(driver_pid, process_info, :enter)
     {:noreply, new_process_info}
   end
+  
+ # def handle_info({:trace, leader_pid, :receive, {_, {:data, @enter_key}}}, process_info) do
+ #   new_process_info = queue_display_handler(leader_pid, process_info, :return)
+ #   {:noreply, new_process_info}
+ # end
 
   def handle_info({:DOWN, _, :process, shell_pid, _}, %{scope: scope, store_count: store_count} = process_info) do
     case Map.get(process_info, shell_pid) do
@@ -278,25 +291,13 @@ defmodule History.Events.Server do
     {:noreply, process_info}
   end
 
-  defp get_iex_state_cache_and_counter(iex_state) do
-    new_iex_state = Map.from_struct(iex_state)
-    state_map = Map.take(new_iex_state, [:cache, :buffer, :counter])
-    try do
-      state = if state_map.cache == [], do: :empty_cache, else: :ok
-      {state, state_map.counter}
-    catch
-      _,_ ->
-        state = if state_map.buffer == "", do: :empty_cache, else: :ok
-        {state, state_map.counter}
-    end
-  end
-
-  defp do_register_new_shell(%{shell_pid: shell_pid,  server_pid: server_pid} = shell_config,
+  defp do_register_new_shell(%{shell_pid: shell_pid,  server_pid: server_pid, beam_node: beam_node} = shell_config,
             %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info) do
     if Map.get(process_info, shell_pid) == nil do
       store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
+      ctrl_key_tracer(beam_node)
       :erlang.trace(server_pid, true, [:send, :receive])
       {kbh_pid, kbh_queue} = setup_key_buffer_history(shell_config, key_buffer_history)
       new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: kbh_queue, key_buffer_history_pid: kbh_pid})
@@ -307,10 +308,40 @@ defmodule History.Events.Server do
     end
   end
 
-  defp setup_key_buffer_history(%{group_leader: group_leader, node: my_node, store_name: store_name} = _shell_config, true) do
+  
+  defp ctrl_key_tracer(remote_node) do
+    dest = self()
+        
+    {mod, bin, _file} = :code.get_object_code(__MODULE__) 
+    :rpc.call(remote_node, :code, :load_binary, [mod, :nofile, bin]) 
+    
+    Node.spawn(remote_node, 
+        fn -> 
+                 :erlang.trace(Process.whereis(:user_drv), true, [:send, :receive])
+                 do_ctrl_key_tracer(dest)
+        end)              
+  end
+  
+  defp do_ctrl_key_tracer(dest) do
+    receive do
+       {_, pid, :receive, {_, {:data, @history_scan_key}}} -> 
+          send(dest, {:scan_key, pid})
+          do_ctrl_key_tracer(dest)
+        {_, pid, :receive, {_, {:data, @history_down_key}}} -> 
+          send(dest, {:down_key, pid})
+          do_ctrl_key_tracer(dest)
+        {_, pid, :receive, {_, {:data, @enter_key}}} -> 
+          send(dest, {:enter_key, pid})
+          do_ctrl_key_tracer(dest)
+          _ ->
+          do_ctrl_key_tracer(dest)    
+      end
+  end
+
+  defp setup_key_buffer_history(%{server_pid: server_pid, node: my_node, store_name: store_name} = _shell_config, true) do
     my_pid = self()
     if my_node == Node.self() do
-      :erlang.trace(group_leader, true, [:receive])
+      :erlang.trace(server_pid, true, [:receive])
       {nil, setup_key_buffer_history_queue(store_name)}
     else
       {mod, bin, _file} = :code.get_object_code(__MODULE__)
@@ -318,8 +349,8 @@ defmodule History.Events.Server do
       queue = setup_key_buffer_history_queue(store_name)
       pid = Node.spawn(my_node,
               fn ->
-                  :erlang.trace(group_leader, true, [:receive])
-                  remote_key_buffer_history_loop(group_leader, my_pid)
+                  :erlang.trace(server_pid, true, [:receive])
+                  remote_key_buffer_history_loop(server_pid, my_pid)
               end)
       {pid, queue}
     end
@@ -338,109 +369,88 @@ defmodule History.Events.Server do
     end
   end
 
-  defp remote_key_buffer_history_loop(group_leader, dest_pid) do
+  defp remote_key_buffer_history_loop(server_pid, dest_pid) do
     receive do
       :exit ->
-        :erlang.trace(group_leader, false, [:receive])
+        :erlang.trace(server_pid, false, [:receive])
 
       message ->
         send(dest_pid,message)
-        remote_key_buffer_history_loop(group_leader, dest_pid)
+        remote_key_buffer_history_loop(server_pid, dest_pid)
     end
   end
 
-
-  defp send_to_shell(user_driver, port, _command, :initial_down) do
-    send(user_driver, {port,{:data, [@history_scan_key]}})
+  defp send_to_shell(user_driver, user_driver_group, command, last_command, :scan_action) do
+    send(user_driver, {user_driver_group, {:requests, 
+                         [{:move_rel, -String.length(last_command)}, 
+                         :delete_after_cursor, 
+                         {:insert_chars_over, :unicode, command}]}})
   end
-
-  defp send_to_shell(user_driver, port, command, _) do
-    send(user_driver, {port,{:data, [to_charlist(command)]}})
+  
+  defp send_to_shell(user_driver, user_driver_group, command, _) do
+    send(user_driver_group, {user_driver, {:data, command}})
   end
 
   defp paste_command(command, shell_pid, process_info) do
     case Map.get(process_info, shell_pid) do
-      %{user_driver: user_driver, port: port} = _shell_config ->
-        send_to_shell(user_driver, port, command, nil)
+      %{user_driver: user_driver, user_driver_group: user_driver_group} = _shell_config ->
+        send_to_shell(user_driver, user_driver_group, command, nil)
 
       _ ->
         :ok
     end
   end
 
-  defp last_command_result(_current_count, _shell_pid, %{save_invalid_results: true} = process_info, _), do:
-    process_info
-
-  defp last_command_result(current_count, shell_pid, process_info, cache) do
-    case Map.get(process_info, shell_pid) do
-      %{success_count: nil} = shell_config ->
-        %{process_info | shell_pid => %{shell_config | success_count: current_count}}
-
-      %{success_count: val, last_command: last_command, pending_command: "", store_name: store} = shell_config when current_count == val ->
-        History.Store.delete_data(store, last_command)
-        %{process_info | shell_pid => %{shell_config | last_command: 0}}
-
-      %{success_count: val, queue: queue, last_command: last_command, pending_command: pending, store_name: store} = shell_config when current_count == val and cache == :empty_cache ->
-        History.Store.delete_data(store, last_command)
-        %{process_info | shell_pid => %{shell_config | last_command: 0, success_count: current_count, queue: queue_insert(pending, queue)}}
-
-      %{success_count: val} when current_count == val ->
-        process_info
-
-      %{success_count: val} = shell_config when current_count > val ->
-        %{process_info | shell_pid => %{shell_config | last_command: 0, success_count: current_count}}
-
-      _ ->
-        process_info
-    end
-  end
-
-  defp queue_display_handler(leader_pid, process_info, operation) do
-    case Enum.find(process_info, fn({k,v}) -> is_pid(k) && v.group_leader == leader_pid end) do
-      {shell_pid,  %{queue: {_sp, queue}} = shell_config} when operation == :return ->
-        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, scan_direction: nil}}
-
-      {shell_pid,  %{user_driver: user_driver, port: port} = shell_config} when operation == :initial_down ->
-        send_to_shell(user_driver, port, nil, :initial_down)
-        %{process_info | shell_pid => %{shell_config | scan_direction: :down}}
-
+  defp queue_display_handler(driver_pid, process_info, operation) do
+    case Enum.find(process_info, fn({k,v}) -> is_pid(k) && v.user_driver == driver_pid end) do
+ 
       {_, %{queue: {_sp, []}}} ->
         process_info
+              
+      {_,  %{last_scan_command: ""}} when operation == :enter ->
+        process_info
+        
+     {shell_pid,  %{queue: {_sp, queue},  user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: command} = shell_config} when operation == :enter ->
+       send_to_shell(user_driver, user_driver_group, command <> "\n", nil)
+       %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: ""}}
 
-      {shell_pid,  %{queue: {sp, queue}, user_driver: user_driver, port: port, scan_direction: scan_direction, last_direction: last_direction} = shell_config} ->
+      {shell_pid,  %{queue: {sp, queue}, user_driver: user_driver, user_driver_group: user_driver_group, last_direction: last_direction, last_scan_command: last_command} = shell_config} ->
         queue_size = Enum.count(queue)
-        direction = if scan_direction == :down, do: :down, else: :up
-        search_pos = get_search_position(sp, queue_size, last_direction, direction)
+        search_pos = get_search_position(sp, queue_size, last_direction, operation)
 
-        if search_pos != nil do
-          actual_search_pos = if search_pos == 0, do: 1, else: search_pos - 1
-          {_, command} = Enum.fetch(queue, actual_search_pos)
-          send_to_shell(user_driver, port, String.replace(command, ~r/\s+/, " "), operation)
-          %{process_info | shell_pid => %{shell_config | queue: {search_pos, queue}, scan_direction: nil, last_direction: direction}}
-        else
-          %{process_info | shell_pid => %{shell_config | scan_direction: nil, last_direction: direction}}
+        cond do
+          is_integer(search_pos) && search_pos > 0 && operation == :down ->
+            {_, command} = Enum.fetch(queue, search_pos)
+            send_to_shell(user_driver, user_driver_group, command, last_command, :scan_action)
+            %{process_info | shell_pid => %{shell_config | queue: {search_pos, queue}, last_direction: operation, last_scan_command: command}} 
+            
+          is_integer(search_pos) && operation == :up ->
+            {_, command} = Enum.fetch(queue, search_pos)
+            send_to_shell(user_driver, user_driver_group, command, last_command, :scan_action)
+            %{process_info | shell_pid => %{shell_config | queue: {search_pos, queue}, last_direction: operation, last_scan_command: command}}
+  
+          true -> 
+            process_info    
         end
-
+        
       _ ->
         process_info
     end
   end
+  
+  defp get_search_position(0, _size, :up, :down), do: 0
+  defp get_search_position(1, _size, :up, :down), do: 0
+  defp get_search_position(current_value, _size, :up, :down), do: current_value - 1
+
+  defp get_search_position(0, _size, :down, :up), do: 1
+  defp get_search_position(current_value, _size, :down, :up), do: current_value + 1
 
   defp get_search_position(0, _size, :up, :up), do: 1
   defp get_search_position(current_value, size, :up, :up) when current_value >= size, do: current_value
   defp get_search_position(current_value, _size, :up, :up), do: current_value + 1
 
-  defp get_search_position(0, _size, :down, :down), do: nil
-  defp get_search_position(1, _size, :down, :down), do: nil
-  defp get_search_position(current_value, _size, :down, :down), do: current_value - 1
-
-  defp get_search_position(0, _size, :up, :down), do: nil
-  defp get_search_position(1, _size, :up, :down), do: nil
-  defp get_search_position(current_value, size, :up, :down) when current_value >= size - 1, do: current_value - 1
-  defp get_search_position(current_value, _size, :up, :down), do: current_value - 1
-
-  defp get_search_position(0, _size, :down, :up), do: 1
-  defp get_search_position(current_value, _size, :down, :up), do: current_value + 1
+  defp get_search_position(0, _size, _, :down), do: 0
+  defp get_search_position(current_value, _size, _, :down), do: current_value - 1
 
 
   defp queue_insert(command, {_, []}), do:
@@ -467,26 +477,20 @@ defmodule History.Events.Server do
     end
   end
 
-  defp validate_command(command, shell_pid, process_info) do
+  defp validate_command(process_info, shell_pid) do
     case Map.get(process_info, shell_pid) do
       shell_config when is_map(shell_config) ->
-        do_validate_command(command, shell_config, process_info, shell_pid)
+        do_validate_command(shell_config, process_info, shell_pid)
       _ ->
         process_info
     end
   end
 
-  defp do_validate_command(command, %{pending_command: pending} = shell_config, process_info, shell_pid) do
+  defp do_validate_command(%{pending_command: command} = shell_config, process_info, shell_pid) do
     if is_command_valid?(command) do
       {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     else
-      new_command = pending <> command
-      if is_command_valid?(new_command) do
-        {true, new_command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
-      else
-        new_pending = String.replace(new_command, "\n", "")
-        {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: new_pending}}}
-      end
+      {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     end
   end
 
@@ -620,8 +624,5 @@ defmodule History.Events.Server do
         end
     end
   end
-
-  defp de_alias_command(command, nil), do: command
-  defp de_alias_command(command, alias), do: String.replace(command, alias, "History.")
 
 end

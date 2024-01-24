@@ -42,7 +42,7 @@ defmodule History.Bindings do
   @doc false
   def do_initialize({:ok, true, scope, my_node}) do
     db_labels = init_stores(scope, my_node)
-    server_pid = find_server()
+    server_pid = :group.whereis_shell()
     shell_pid = self()
     reg_name = make_reg_name()
     leader = Process.group_leader()
@@ -145,12 +145,12 @@ defmodule History.Bindings do
   @doc false
   def inject_command(command) do
     server = find_server()
-    send(self(), {:eval, server, command, %IEx.State{}})
+    send(self(), {:eval, server, command, 1, {"", :other}})
   end
 
   @doc false
   def find_server(), do:
-    Process.info(self())[:dictionary][:iex_server]
+    :group.whereis_shell()
 
   defp init_stores(scope, my_node) do
     str_label = if scope in [:node, :local],
@@ -258,7 +258,7 @@ defmodule History.Bindings do
   end
 
   defp clear_bindings_from_shell() do
-    inject_command("IEx.Evaluator.init(:ack, History.Bindings.find_server(), Process.group_leader(), [binding: []])")
+    inject_command("IEx.Evaluator.init(:ack, :group.whereis_shell(), Process.group_leader(), [binding: []])")
   end
 
   defp set_bindings_for_shell() do
