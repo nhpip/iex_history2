@@ -3,12 +3,12 @@ defmodule History.MixProject do
 
   def project do
     [
-      app: :iex_history,
+      app: :iex_pretty_history,
       version: "4.2.0",
       elixir: "~> 1.16.0-otp-26",
       description: description(),
       package: package(),
-      name: "IEx History",	
+      name: "IEx Pretty History",	
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
