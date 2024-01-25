@@ -24,8 +24,9 @@
 
 defmodule History.Events do
   @moduledoc false
-  
-  @infinity_limit 3000  # So dets doesn't get too big, may find a better way
+
+  # So dets doesn't get too big, may find a better way
+  @infinity_limit 3000
   @store_name "store_history_events"
   @random_string "adarwerwvwvevwwerxrwfx"
 
@@ -34,6 +35,7 @@ defmodule History.Events do
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
+
     if scope != :global do
       set_group_history(:disabled)
       History.persistence_mode(scope) |> do_initialize()
@@ -48,22 +50,24 @@ defmodule History.Events do
   def get_history() do
     History.configuration(:scope, :local)
     |> do_get_history()
-    |> pp_history_items(1) 
+    |> pp_history_items(1)
   end
 
   @doc false
   def get_history_item(match) when is_binary(match) do
     History.configuration(:scope, :local)
     |> do_get_history()
-    |> Enum.reduce(1,
-         fn({date, command}, count) ->
-            if String.contains?(command, match) do
-              display_formatted_date(count, date, command)
-              count + 1
-            else
-              count + 1
-            end
-    end)
+    |> Enum.reduce(
+      1,
+      fn {date, command}, count ->
+        if String.contains?(command, match) do
+          display_formatted_date(count, date, command)
+          count + 1
+        else
+          count + 1
+        end
+      end
+    )
   end
 
   @doc false
@@ -81,6 +85,7 @@ defmodule History.Events do
   @doc false
   def get_history_items(start, stop) do
     real_start = if is_atom(start), do: 1, else: start
+
     do_get_history_range(start, stop)
     |> pp_history_items(real_start)
   end
@@ -91,8 +96,9 @@ defmodule History.Events do
     {result, _} = Code.eval_string(command, History.get_bindings())
 
     if History.configuration(:scope, :local) == :global,
-       do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(command)]),
-       else: Server.save_history_command(command)
+      do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(command)]),
+      else: Server.save_history_command(command)
+
     result
   end
 
@@ -107,13 +113,13 @@ defmodule History.Events do
     {_date, command} = do_get_history_item(i)
     Server.edit_command(command)
   end
-    
+
   @doc false
   def clear() do
     if History.configuration(:scope, :local) != :global do
       Server.clear()
     else
-      History.get_log_path() <> "/erlang-shell*"
+      (History.get_log_path() <> "/erlang-shell*")
       |> Path.wildcard()
       |> Enum.each(fn file -> File.rm(file) end)
     end
@@ -121,26 +127,26 @@ defmodule History.Events do
 
   @doc false
   def clear_history(range) do
-    cond do 
+    cond do
       History.configuration(:scope, :local) != :global ->
         Server.clear_history(range)
-    
-     range == :all ->
-        History.get_log_path() <> "/erlang-shell*"
+
+      range == :all ->
+        (History.get_log_path() <> "/erlang-shell*")
         |> Path.wildcard()
         |> Enum.each(fn file -> File.rm(file) end)
-     
-     true -> 
-      nil
-   end
- end
+
+      true ->
+        nil
+    end
+  end
 
   @doc false
   def stop_clear() do
     if History.configuration(:scope, :local) != :global do
       Server.stop_clear()
     else
-      History.get_log_path() <> "/erlang-shell*"
+      (History.get_log_path() <> "/erlang-shell*")
       |> Path.wildcard()
       |> Enum.each(fn file -> File.rm(file) end)
     end
@@ -150,19 +156,28 @@ defmodule History.Events do
   def state(how \\ :normal) do
     my_node = History.my_real_node()
     server_state = Server.get_state()
-    count = if is_map(server_state) do
-        Enum.map(server_state,
-              fn({_pid, %{beam_node: node, size: size}}) when node == my_node ->
-                   [node: node, size: size]
-                (_) -> :ok 
-        end)
-        |> Enum.filter(&(&1 != :ok)) 
-        |> List.flatten() 
+
+    count =
+      if is_map(server_state) do
+        Enum.map(
+          server_state,
+          fn
+            {_pid, %{beam_node: node, size: size}} when node == my_node ->
+              [node: node, size: size]
+
+            _ ->
+              :ok
+          end
+        )
+        |> Enum.filter(&(&1 != :ok))
+        |> List.flatten()
         |> Keyword.get(:size)
       else
         0
-      end  
+      end
+
     string = "#{IO.ANSI.white()}Current history is #{IO.ANSI.red()}#{count} #{IO.ANSI.white()}commands in size"
+
     if how == :pretty do
       IO.puts("#{string}")
     else
@@ -173,7 +188,7 @@ defmodule History.Events do
   @doc false
   def raw_state() do
     Server.get_state()
-   end
+  end
 
   @doc false
   def raw_state(pid) do
@@ -199,9 +214,10 @@ defmodule History.Events do
   @doc false
   def do_get_history_registration(store_name, start, stop) do
     quantity = stop - start
+
     History.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
-    |> Enum.map(fn({_date, cmd}) -> String.trim(cmd) end)
+    |> Enum.map(fn {_date, cmd} -> String.trim(cmd) end)
     |> Enum.slice(start, quantity)
     |> Enum.reverse()
   end
@@ -213,55 +229,51 @@ defmodule History.Events do
 
   defp do_initialize(_), do: :not_ok
 
-  defp do_get_history_item(i) when i >= 1, do:
-    History.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
+  defp do_get_history_item(i) when i >= 1, do: History.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
 
-  defp do_get_history_item(i), do:
-    do_get_history_range(state(:number) + i, :stop)
+  defp do_get_history_item(i), do: do_get_history_range(state(:number) + i, :stop)
 
-  defp do_get_history_range(:start, stop), do:
-    do_get_history_range(1, stop)
+  defp do_get_history_range(:start, stop), do: do_get_history_range(1, stop)
 
-  defp do_get_history_range(start, :stop), do:
-    do_get_history_range(start, state(:number))
+  defp do_get_history_range(start, :stop), do: do_get_history_range(start, state(:number))
 
   defp do_get_history_range(start, stop) when start >= 1 and stop > start do
     start = start - 1
     stop = stop
     quantity = stop - start
     history_size = state(:number)
+
     if start > history_size or stop > history_size,
-       do: raise(%ArgumentError{message: "Values out of range, only #{history_size} entries exist"})
+      do: raise(%ArgumentError{message: "Values out of range, only #{history_size} entries exist"})
+
     History.configuration(:scope, :local)
     |> do_get_history()
     |> Enum.slice(start, quantity)
   end
 
-  defp do_get_history_range(_start, _stop), do:
-    raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
+  defp do_get_history_range(_start, _stop), do: raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
 
   defp pp_history_items(items, start) do
-    Enum.reduce(items, start,
-      fn({date, command}, count) ->
-        display_formatted_date(count, date, command)
-        count + 1
-      end)
+    Enum.reduce(items, start, fn {date, command}, count ->
+      display_formatted_date(count, date, command)
+      count + 1
+    end)
   end
 
   defp clean_command(command) do
     clean_command(command, get_command_width())
   end
-  
+
   def clean_command(command, display_width) when byte_size(command) > display_width do
     String.replace(command, ~r/\s+/, " ")
     |> String.slice(0, display_width)
-    |> Kernel.<>(" ...")    
+    |> Kernel.<>(" ...")
   end
-  
+
   def clean_command(command, _) do
     String.replace(command, ~r/\s+/, " ")
   end
-  
+
   defp get_command_width() do
     History.configuration(:command_display_width, nil)
   end
@@ -270,39 +282,43 @@ defmodule History.Events do
     command = clean_command(command)
     show_date? = History.configuration(:show_date, true)
     scope = History.configuration(:scope, :local)
+
     if show_date? && scope != :global,
-       do: IO.puts("#{color(:index)}#{count}: #{color(:date)}#{date}: #{color(:command)}#{command}"),
-       else: IO.puts("#{color(:index)}#{count}: #{color(:command)}#{command}")
+      do: IO.puts("#{color(:index)}#{count}: #{color(:date)}#{date}: #{color(:command)}#{command}"),
+      else: IO.puts("#{color(:index)}#{count}: #{color(:command)}#{command}")
   end
 
-  defp color(what), do:
-    History.get_color_code(what)
+  defp color(what), do: History.get_color_code(what)
 
-  defp set_group_history(state), do:
-    :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
+  defp set_group_history(state), do: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
 
   defp do_get_history(:global) do
-    hide_string = if History.configuration(:hide_history_commands, true),
-                      do: History.module_name(),
-                      else: @random_string
+    hide_string =
+      if History.configuration(:hide_history_commands, true),
+        do: History.module_name(),
+        else: @random_string
+
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
     |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) && not String.starts_with?(cmd, hide_string) end)
-   # |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
+    # |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
 
   defp do_get_history(_) do
     store_name = Process.get(:history_events_store_name)
+
     History.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
-    |> Enum.map(fn({date, cmd}) -> {unix_to_date(date), String.trim(cmd)} end)
+    |> Enum.map(fn {date, cmd} -> {unix_to_date(date), String.trim(cmd)} end)
   end
 
   defp create_local_shell_state(scope, my_node) do
-    str_label = if scope in [:node, :local],
-                   do: "#{scope}_#{my_node}",
-                   else: Atom.to_string(scope)
+    str_label =
+      if scope in [:node, :local],
+        do: "#{scope}_#{my_node}",
+        else: Atom.to_string(scope)
+
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
@@ -310,18 +326,37 @@ defmodule History.Events do
     server_node = :erlang.node(server_pid)
     beam_node = :erlang.node(:erlang.group_leader())
     user_driver_group = :rpc.call(beam_node, :user_drv, :whereis_group, [])
-    user_driver =  :rpc.call(beam_node, Process, :whereis, [:user_drv])
+    user_driver = :rpc.call(beam_node, Process, :whereis, [:user_drv])
 
-    %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
-      size: 0, prepend_ids: nil, pending_command: "",  node: server_node, beam_node: beam_node, user_driver: user_driver,
-      port: :port, success_count: nil, last_command: nil, queue: {0, []}, user_driver_group: user_driver_group,
-      scan_direction: nil, last_direction: :none, keystroke_monitor_pid: nil, last_scan_command: "", paste_buffer: ""}
+    %{
+      store_name: store_name,
+      store_filename: store_filename,
+      server_pid: server_pid,
+      shell_pid: self(),
+      size: 0,
+      prepend_ids: nil,
+      pending_command: "",
+      node: server_node,
+      beam_node: beam_node,
+      user_driver: user_driver,
+      port: :port,
+      success_count: nil,
+      last_command: nil,
+      queue: {0, []},
+      user_driver_group: user_driver_group,
+      scan_direction: nil,
+      last_direction: :none,
+      keystroke_monitor_pid: nil,
+      last_scan_command: "",
+      paste_buffer: ""
+    }
   end
 
   defp register_or_start_tracer_service(local_shell_state) do
     if Process.whereis(Server) == nil do
       do_start_tracer_service()
     end
+
     Server.register_new_shell(local_shell_state)
   end
 
@@ -331,13 +366,25 @@ defmodule History.Events do
     prepend_ids? = History.configuration(:prepend_identifiers, true)
     save_invalid = History.configuration(:save_invalid_results, true)
     key_buffer_history = History.configuration(:key_buffer_history, true)
-    real_limit = case History.configuration(:history_limit, :infinity) do 
-        :infinity ->  @infinity_limit
+
+    real_limit =
+      case History.configuration(:history_limit, :infinity) do
+        :infinity -> @infinity_limit
         limit -> limit
-    end
+      end
+
     process_info_state =
-          %{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit, module_alias: nil,
-            prepend_identifiers: prepend_ids?, save_invalid_results: save_invalid, key_buffer_history: key_buffer_history}
+      %{
+        scope: scope,
+        hide_history_commands: hide_history_cmds,
+        store_count: 0,
+        limit: real_limit,
+        module_alias: nil,
+        prepend_identifiers: prepend_ids?,
+        save_invalid_results: save_invalid,
+        key_buffer_history: key_buffer_history
+      }
+
     Server.start_link(process_info_state)
   end
 
@@ -349,9 +396,8 @@ defmodule History.Events do
   end
 
   defp unix_to_date(unix) do
-    DateTime.from_unix!(round(unix / 1000)) 
-    |> DateTime.to_string() 
+    DateTime.from_unix!(round(unix / 1000))
+    |> DateTime.to_string()
     |> String.replace("Z", "")
   end
-  
 end

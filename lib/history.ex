@@ -54,11 +54,11 @@ defmodule History do
       iex> hb()             - Displays the current bindings.
       
       iex> hi()             - Summary
-  
+
   NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor
-  
+
   ## Admin Functions
-  
+
       iex> History.add_binding(var, val)
       
       iex> History.get_binding(var)
@@ -161,14 +161,24 @@ defmodule History do
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @excluded_history_functions [".h(", ".x(", ".c("]
-  @excluded_history_imports   ["hc(", "hl(", "hs(", "hx(", "hb(", "hi("]
+  @excluded_history_imports ["hc(", "hl(", "hs(", "hx(", "hb(", "hi("]
   @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
-  @default_config [scope: :local, history_limit: :infinity, hide_history_commands: true, prepend_identifiers: true,
-                   show_date: true, save_bindings: true, command_display_width: @default_width, import: true,
-                   save_invalid_results: false, key_buffer_history: true, colors: @default_colors]
+  @default_config [
+    scope: :local,
+    history_limit: :infinity,
+    hide_history_commands: true,
+    prepend_identifiers: true,
+    show_date: true,
+    save_bindings: true,
+    command_display_width: @default_width,
+    import: true,
+    save_invalid_results: false,
+    key_buffer_history: true,
+    colors: @default_colors
+  ]
 
   @doc """
     Initializes the History app. Takes the following parameters:
@@ -199,17 +209,20 @@ defmodule History do
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
+
     if history_configured?(config) && not is_enabled?() do
       :dbg.stop()
-      new_config = init_save_config(config) 
+      new_config = init_save_config(config)
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
+
       if Keyword.get(new_config, :import),
         do: inject_command("import History, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]")
+
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
       |> set_enabled()
       |> present_welcome()
-      else
+    else
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
     end
   end
@@ -235,8 +248,7 @@ defmodule History do
   @doc """
     Displays the current configuration.
   """
-  def configuration(), do:
-    Process.get(:history_config, [])
+  def configuration(), do: Process.get(:history_config, [])
 
   @doc """
     Displays the default configuration.
@@ -255,12 +267,13 @@ defmodule History do
     IO.puts("  #{History.Events.state()}.")
     IO.puts("  #{History.Bindings.state()}.")
   end
-   
+
   @doc """
     Displays the entire history.
   """
   def hl() do
     is_enabled!()
+
     try do
       History.Events.get_history()
     catch
@@ -272,9 +285,10 @@ defmodule History do
   Displays the entire history from the most recent entry back (negative number),
   or from the oldest entry forward (positive number)
   """
-  @spec hl(integer()) :: nil 
+  @spec hl(integer()) :: nil
   def hl(val) when val < 0 do
     is_enabled!()
+
     try do
       History.Events.get_history_item(val)
       :ok
@@ -282,23 +296,25 @@ defmodule History do
       _, _ -> {:error, :not_found}
     end
   end
-    
+
   def hl(val) when val > 0 do
     is_enabled!()
+
     try do
       History.Events.get_history_items(1, val)
       :ok
     catch
       _, _ -> {:error, :not_found}
     end
-end
+  end
 
   @doc """
   Specify a range, the atoms :start and :stop can also be used.
   """
-  @spec hl(integer(), integer()) :: nil 
+  @spec hl(integer(), integer()) :: nil
   def hl(start, stop) do
     is_enabled!()
+
     try do
       History.Events.get_history_items(start, stop)
       :ok
@@ -306,15 +322,16 @@ end
       _, _ -> {:error, :not_found}
     end
   end
-      
+
   @doc """
   Returns the list of expressions where all or part of the string matches.
-  
+
   The original expression does not need to be a string.
   """
   @spec hs(String.t()) :: nil
   def hs(match) do
     is_enabled!()
+
     try do
       History.Events.get_history_item(match)
       :ok
@@ -322,57 +339,60 @@ end
       _, _ -> {:error, :not_found}
     end
   end
-  
+
   @doc """
   Invokes the command at index 'i'.
   """
-  @spec hx(integer()) :: any() 
+  @spec hx(integer()) :: any()
   def hx(i) do
     is_enabled!()
+
     try do
       History.Events.execute_history_item(i)
     catch
       _, {:badmatch, nil} -> {:error, :not_found}
       :error, %CompileError{description: descr} -> {:error, descr}
-       error, rsn -> {error, rsn}
+      error, rsn -> {error, rsn}
     end
   end
 
   @doc """
   Copies the command at index 'i' and pastes it to the shell.
   """
-  @spec hc(integer()) :: any() 
+  @spec hc(integer()) :: any()
   def hc(i) do
     is_enabled!()
+
     try do
       History.Events.copy_paste_history_item(i)
     catch
       _, _ -> {:error, :not_found}
     end
   end
-  
-  @spec he(integer()) :: any() 
+
+  @spec he(integer()) :: any()
   def he(i) do
     is_enabled!()
+
     try do
       History.Events.edit_history_item(i)
     catch
       _, _ -> {:error, :not_found}
     end
   end
-  
+
   @doc """
   Show the variable bindings.
   """
   def hb(),
     do: get_bindings()
-  
+
   @doc """
   Show history information summary.
   """
   def hi(),
     do: state()
-  
+
   ###
   # Backwards compatibility
   ###
@@ -381,7 +401,7 @@ end
   def h(start, stop), do: hl(start, stop)
   def c(val), do: hc(val)
   def x(val), do: hx(val)
-  
+
   @doc """
     Clears the history and bindings. If `scope` is `:global`
     the IEx session needs restarting for the changes to take effect.
@@ -389,8 +409,10 @@ end
   def clear() do
     History.Events.clear()
     History.Bindings.clear()
-    if History.configuration(:scope, :local) == :global, do:
-      IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
+    if History.configuration(:scope, :local) == :global,
+      do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
     :ok
   end
 
@@ -401,8 +423,10 @@ end
   """
   def clear_history(val \\ :all) do
     History.Events.clear_history(val)
-    if History.configuration(:scope, :local) == :global && val == :all, do:
-      IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
+    if History.configuration(:scope, :local) == :global && val == :all,
+      do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
     :ok
   end
 
@@ -420,8 +444,10 @@ end
   def stop_clear() do
     History.Events.stop_clear()
     History.Bindings.stop_clear()
-    if History.configuration(:scope, :local) == :global, do:
-      IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
+    if History.configuration(:scope, :local) == :global,
+      do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
+
     :ok
   end
 
@@ -438,22 +464,20 @@ end
   def get_bindings() do
     History.Bindings.get_bindings()
   end
-  
+
   def get_binding(var) when is_bitstring(var) do
     History.Bindings.get_binding(String.to_atom(var))
   end
-  
+
   def get_binding(var) do
     History.Bindings.get_binding(var)
   end
-  
+
   @doc """
     Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
   """
-  def unbind(vars) when is_list(vars), do:
-    History.Bindings.unbind(vars)
-  def unbind(var), do:
-    unbind([var])
+  def unbind(vars) when is_list(vars), do: History.Bindings.unbind(vars)
+  def unbind(var), do: unbind([var])
 
   @doc """
     Saves the current configuration to file.
@@ -545,9 +569,11 @@ end
     if configuration(:scope, :local) != :global do
       current_value = configuration(:save_bindings, true)
       new_config = List.keyreplace(configuration(), :save_bindings, 0, {:save_bindings, value})
+
       if current_value == true,
-          do: History.Bindings.stop_clear(),
-          else: History.Bindings.initialize(new_config)
+        do: History.Bindings.stop_clear(),
+        else: History.Bindings.initialize(new_config)
+
       Process.put(:history_config, new_config)
       configuration()
     else
@@ -563,29 +589,27 @@ end
   end
 
   @doc false
-  def get_color_code(for), do:
-    Kernel.apply(IO.ANSI, configuration(:colors, @default_colors)[for], [])
+  def get_color_code(for), do: Kernel.apply(IO.ANSI, configuration(:colors, @default_colors)[for], [])
 
   @doc false
   def get_log_path() do
-    filename = :filename.basedir(:user_cache, 'erlang-history') |> to_string()
+    filename = :filename.basedir(:user_cache, ~c"erlang-history") |> to_string()
     File.mkdir_p!(filename)
     filename
   end
 
   def save_binding(var, value) do
-    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}") 
-    :ok 
+    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
+    :ok
   end
-  
+
   def save_binding(value) do
-    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}") 
-    :ok 
+    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
+    :ok
   end
-  
+
   @doc false
-  def my_real_node(), do:
-    :erlang.node(Process.group_leader())
+  def my_real_node(), do: :erlang.node(Process.group_leader())
 
   @doc false
   def module_name(), do: @module_name
@@ -600,8 +624,7 @@ end
   end
 
   @doc false
-  def configuration(item, default), do:
-    Keyword.get(configuration(), item, default)
+  def configuration(item, default), do: Keyword.get(configuration(), item, default)
 
   @doc false
   def persistence_mode(:local) do
@@ -610,15 +633,15 @@ end
   end
 
   @doc false
-  def persistence_mode(:global), do:
-    {:ok, true, :global, :no_node}
+  def persistence_mode(:global), do: {:ok, true, :global, :no_node}
 
   @doc false
   def persistence_mode(node) when is_atom(node) do
     my_node = my_real_node()
+
     if my_node == node,
-       do: {:ok, true, :local, my_node},
-       else: {:ok, false, :no_label, :no_node}
+      do: {:ok, true, :local, my_node},
+      else: {:ok, false, :no_label, :no_node}
   end
 
   @doc false
@@ -627,25 +650,26 @@ end
   end
 
   @doc false
-  def persistence_mode(_), do:
-    {:ok, false, :no_label, :no_node}
+  def persistence_mode(_), do: {:ok, false, :no_label, :no_node}
 
   @doc false
-  def inject_command(command), do:
-    History.Bindings.inject_command(command)
+  def inject_command(command), do: History.Bindings.inject_command(command)
 
   defp inject_command_all_servers(command) do
-    Enum.each(Process.list(),
-                  fn(pid) ->
-                      server = :group.whereis_shell()
-                      if not is_nil(server),
-                         do: send(pid, {:eval, server, command, 1, {"", :other}})
-                  end)
+    Enum.each(
+      Process.list(),
+      fn pid ->
+        server = :group.whereis_shell()
+
+        if not is_nil(server),
+          do: send(pid, {:eval, server, command, 1, {"", :other}})
+      end
+    )
   end
 
   defp is_enabled!() do
     if not is_enabled?(),
-       do: raise(%ArgumentError{message: "History is not enabled"})
+      do: raise(%ArgumentError{message: "History is not enabled"})
   end
 
   defp do_load_config(filename) when is_binary(filename) do
@@ -653,20 +677,25 @@ end
     config
   end
 
-  defp do_load_config(config), do:
-    config
+  defp do_load_config(config), do: config
 
   defp init_save_config(config) do
     infinity_limit = History.Events.infinity_limit()
     colors = Keyword.get(config, :colors, @default_colors)
-    new_colors = Enum.map(@default_colors, fn({key, default}) -> {key, Keyword.get(colors, key, default)} end)
+    new_colors = Enum.map(@default_colors, fn {key, default} -> {key, Keyword.get(colors, key, default)} end)
     config = Keyword.delete(config, :colors)
-    new_config = Enum.map(@default_config,
-                      fn({:colors, _}) -> {:colors, Keyword.get(config, :colors, new_colors)}
-                        ({:limit, current}) when current > infinity_limit ->   {:limit, Keyword.get(config, :limit, infinity_limit)}
-                        ({key, default}) -> {key, Keyword.get(config, key, default)}
-                      end)
-    if Keyword.get(new_config, :scope, :local) == :global  do
+
+    new_config =
+      Enum.map(
+        @default_config,
+        fn
+          {:colors, _} -> {:colors, Keyword.get(config, :colors, new_colors)}
+          {:limit, current} when current > infinity_limit -> {:limit, Keyword.get(config, :limit, infinity_limit)}
+          {key, default} -> {key, Keyword.get(config, key, default)}
+        end
+      )
+
+    if Keyword.get(new_config, :scope, :local) == :global do
       newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
       Process.put(:history_config, newer_config)
       newer_config
@@ -678,8 +707,10 @@ end
 
   defp history_configured?(config) do
     scope = Keyword.get(config, :scope, :local)
+
     if History.Events.does_current_scope_match?(scope) do
       my_node = my_real_node()
+
       if my_node == scope || scope in [:global, :local],
         do: true,
         else: false
@@ -688,15 +719,12 @@ end
     end
   end
 
-  defp present_welcome(:not_ok), do:
-    :ok
+  defp present_welcome(:not_ok), do: :ok
 
-  defp present_welcome(_), do:
-    inject_command("History.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
+  defp present_welcome(_), do: inject_command("History.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
 
   defp set_enabled(config) do
     Process.put(:history_is_enabled, true)
     config
   end
-
 end

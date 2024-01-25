@@ -24,7 +24,7 @@
 
 defmodule History.Bindings do
   @moduledoc false
-  
+
   @ets_name "ets_history_bindings"
   @store_name "history_bindings"
   @bindings_check_interval 2500
@@ -58,7 +58,6 @@ defmodule History.Bindings do
         binding_evaluator_loop(%{binding_count: 0, shell_pid: shell_pid, server_pid: server_pid, group_leader_pid: leader, db_labels: db_labels})
       end)
     end
-
   end
 
   @doc false
@@ -79,7 +78,7 @@ defmodule History.Bindings do
       _ -> raise("not found")
     end
   end
-  
+
   @doc false
   def get_value(label, ets_name) do
     case :ets.lookup(ets_name, label) do
@@ -91,6 +90,7 @@ defmodule History.Bindings do
   @doc false
   def unbind(vars) do
     save_bindings? = History.configuration(:save_bindings, true)
+
     if save_bindings? do
       send_msg({:unbind, vars, self()})
       wait_rsp(:ok_done)
@@ -104,6 +104,7 @@ defmodule History.Bindings do
   @doc false
   def clear() do
     save_bindings? = History.configuration(:save_bindings, true)
+
     if save_bindings? do
       send_msg({:clear, self()})
       wait_rsp(:ok_done)
@@ -116,6 +117,7 @@ defmodule History.Bindings do
   @doc false
   def stop_clear() do
     save_bindings? = History.configuration(:save_bindings, true)
+
     if save_bindings? do
       send_msg({:stop_clear, self()})
       wait_rsp(:ok_done)
@@ -128,6 +130,7 @@ defmodule History.Bindings do
   @doc false
   def state(pretty \\ false) do
     save_bindings? = History.configuration(:save_bindings, true)
+
     if save_bindings? do
       send_msg({:state, self()})
       {_, rsp} = wait_rsp({:state, :_})
@@ -142,6 +145,7 @@ defmodule History.Bindings do
   @doc false
   def raw_state() do
     save_bindings? = History.configuration(:save_bindings, true)
+
     if save_bindings? do
       send_msg({:state, self()})
       wait_rsp({:state, :_})
@@ -157,13 +161,14 @@ defmodule History.Bindings do
   end
 
   @doc false
-  def find_server(), do:
-    :group.whereis_shell()
+  def find_server(), do: :group.whereis_shell()
 
   defp init_stores(scope, my_node) do
-    str_label = if scope in [:node, :local],
-                   do: "#{scope}_#{my_node}",
-                   else: Atom.to_string(scope)
+    str_label =
+      if scope in [:node, :local],
+        do: "#{scope}_#{my_node}",
+        else: Atom.to_string(scope)
+
     ets_name = String.to_atom("#{@ets_name}_#{str_label}")
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = to_charlist("#{History.get_log_path()}/bindings_#{str_label}.dat")
@@ -173,6 +178,7 @@ defmodule History.Bindings do
       :ets.new(ets_name, [:named_table, :public])
       :ets.give_away(ets_name, :erlang.whereis(:init), [])
     end
+
     History.Store.open_store(store_name, store_filename, scope)
 
     %{ets_name: ets_name, store_name: store_name, store_filename: store_filename}
@@ -200,9 +206,10 @@ defmodule History.Bindings do
 
       {:unbind, vars, pid} ->
         Enum.each(vars, fn label ->
-            :ets.delete(db_labels.ets_name, label)
-            History.Store.delete_data(db_labels.store_name, label)
+          :ets.delete(db_labels.ets_name, label)
+          History.Store.delete_data(db_labels.store_name, label)
         end)
+
         size = :ets.info(config.db_labels.ets_name, :size)
         send(pid, :ok_done)
         binding_evaluator_loop(%{config | binding_count: size})
@@ -247,21 +254,24 @@ defmodule History.Bindings do
 
     bindings =
       for var <- variables do
-            try do
-              elem(IEx.Evaluator.value_from_binding(shell_pid, server_pid, var, %{}), 1)
-            catch
-              _, _ -> :could_not_bind
-            end
-         end
+        try do
+          elem(IEx.Evaluator.value_from_binding(shell_pid, server_pid, var, %{}), 1)
+        catch
+          _, _ -> :could_not_bind
+        end
+      end
+
     Enum.zip(variables, bindings)
   end
 
   defp load_bindings(%{ets_name: ets_name, store_name: store_name}) do
-    bindings = History.Store.foldl(store_name, [],
-              fn {label, value}, acc ->
-                :ets.insert(ets_name, {label, value})
-                ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
-            end) |> List.to_string()
+    bindings =
+      History.Store.foldl(store_name, [], fn {label, value}, acc ->
+        :ets.insert(ets_name, {label, value})
+        ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
+      end)
+      |> List.to_string()
+
     inject_command(bindings <> " :ok")
   end
 
@@ -272,10 +282,17 @@ defmodule History.Bindings do
   defp set_bindings_for_shell() do
     ets_name = Process.get(:history_bindings_ets_label)
     clear_bindings_from_shell()
-    bindings = :ets.foldl(
-                   fn {label, _value}, acc ->
-                     ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
-                   end, [], ets_name) |> List.to_string()
+
+    bindings =
+      :ets.foldl(
+        fn {label, _value}, acc ->
+          ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
+        end,
+        [],
+        ets_name
+      )
+      |> List.to_string()
+
     inject_command(bindings <> " :ok")
   end
 
@@ -300,5 +317,4 @@ defmodule History.Bindings do
       1000 -> :nok
     end
   end
-
 end
