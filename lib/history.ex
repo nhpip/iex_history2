@@ -59,6 +59,10 @@ defmodule History do
   
   ## Admin Functions
   
+      iex> History.add_binding(var, val)
+      
+      iex> History.get_binding(var)
+      
       iex> History.clear_history()
       
       iex> History.clear_bindings()
