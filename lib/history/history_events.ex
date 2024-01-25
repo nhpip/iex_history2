@@ -64,6 +64,7 @@ defmodule History.Events do
               count + 1
             end
     end)
+    nil
   end
 
   @doc false
@@ -101,9 +102,15 @@ defmodule History.Events do
   @doc false
   def copy_paste_history_item(i) do
     {_date, command} = do_get_history_item(i)
-    Server.paste_command(String.replace(command, ~r/\s+/, " "))
+    Server.paste_command(command)
   end
 
+  @doc false
+  def edit_history_item(i) do
+    {_date, command} = do_get_history_item(i)
+    Server.edit_command(command)
+  end
+    
   @doc false
   def clear() do
     if History.configuration(:scope, :local) != :global do
@@ -296,7 +303,7 @@ defmodule History.Events do
     %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
       size: 0, prepend_ids: nil, pending_command: "",  node: server_node, beam_node: beam_node, user_driver: user_driver,
       port: :port, success_count: nil, last_command: nil, queue: {0, []}, user_driver_group: user_driver_group,
-      scan_direction: nil, last_direction: :up, keystroke_monitor_pid: nil, last_scan_command: ""}
+      scan_direction: nil, last_direction: :none, keystroke_monitor_pid: nil, last_scan_command: "", paste_buffer: ""}
   end
 
   defp register_or_start_tracer_service(local_shell_state) do

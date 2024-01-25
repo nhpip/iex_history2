@@ -49,9 +49,13 @@ defmodule History do
       
       iex> hc(pos)          - Will copy the expression at position pos to the shell.
       
+      iex> he(pos)          - Edit the expression in a text editor.
+      
       iex> hb()             - Displays the current bindings.
       
       iex> hi()             - Summary
+  
+  NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor
   
   ## Admin Functions
   
@@ -196,7 +200,7 @@ defmodule History do
       new_config = init_save_config(config)
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
       if Keyword.get(new_config, :import),
-        do: inject_command("import History, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0]")
+        do: inject_command("import History, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]")
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
       |> set_enabled()
@@ -329,11 +333,21 @@ end
   @doc """
   Copies the command at index 'i' and pastes it to the shell.
   """
-  @spec hl(integer()) :: any() 
+  @spec hc(integer()) :: any() 
   def hc(i) do
     is_enabled!()
     try do
       History.Events.copy_paste_history_item(i)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+  end
+  
+  @spec he(integer()) :: any() 
+  def he(i) do
+    is_enabled!()
+    try do
+      History.Events.edit_history_item(i)
     catch
       _,_ -> {:error, :not_found}
     end
@@ -556,7 +570,7 @@ end
   @doc false
   def exclude_from_history() do
     aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ @excluded_history_imports ++ aliases
+    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["{:success, :history"]
   end
 
   @doc false
