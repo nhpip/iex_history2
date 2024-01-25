@@ -23,6 +23,7 @@
 #
 
 defmodule History.Store do
+  @moduledoc false
 
   @doc false
   def open_store(name, filename, scope, store_count \\ 0) do

@@ -23,7 +23,8 @@
 #
 
 defmodule History.Events do
-
+  @moduledoc false
+  
   @infinity_limit 3000  # So dets doesn't get too big, may find a better way
   @store_name "store_history_events"
   @random_string "adarwerwvwvevwwerxrwfx"

@@ -23,7 +23,8 @@
 #
 
 defmodule History.Bindings do
-
+  @moduledoc false
+  
   @ets_name "ets_history_bindings"
   @store_name "history_bindings"
   @bindings_check_interval 2500
@@ -68,7 +69,7 @@ defmodule History.Bindings do
     try do
       :ets.tab2list(Process.get(:history_bindings_ets_label))
     catch
-      _,_ -> []
+      _, _ -> []
     end
   end
 
@@ -249,7 +250,7 @@ defmodule History.Bindings do
             try do
               elem(IEx.Evaluator.value_from_binding(shell_pid, server_pid, var, %{}), 1)
             catch
-              _,_ -> :could_not_bind
+              _, _ -> :could_not_bind
             end
          end
     Enum.zip(variables, bindings)
@@ -287,7 +288,7 @@ defmodule History.Bindings do
     try do
       send(Process.whereis(make_reg_name()), event)
     catch
-      _,_ -> :error
+      _, _ -> :error
     end
   end
 

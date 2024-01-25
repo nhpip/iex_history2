@@ -201,7 +201,7 @@ defmodule History do
     config = do_load_config(config_or_filename)
     if history_configured?(config) && not is_enabled?() do
       :dbg.stop()
-      new_config = init_save_config(config)
+      new_config = init_save_config(config) 
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
       if Keyword.get(new_config, :import),
         do: inject_command("import History, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]")
@@ -596,7 +596,7 @@ end
   @doc false
   def exclude_from_history() do
     aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["{:success, :history"]
+    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["\n{:success, :history"]
   end
 
   @doc false
@@ -659,22 +659,13 @@ end
   defp init_save_config(config) do
     infinity_limit = History.Events.infinity_limit()
     colors = Keyword.get(config, :colors, @default_colors)
-    new_colors = Enum.map(@default_colors,
-      fn({key, default}) -> {key, Keyword.get(colors, key, default)}
-      end)
+    new_colors = Enum.map(@default_colors, fn({key, default}) -> {key, Keyword.get(colors, key, default)} end)
     config = Keyword.delete(config, :colors)
     new_config = Enum.map(@default_config,
-      fn({key, default}) ->
-        default = if key == :colors, do: new_colors, else: default
-        default = if key == :limit do
-                     if default > infinity_limit,
-                       do: infinity_limit,
-                       else: default
-                     else
-                       default
-                     end
-        {key, Keyword.get(config, key, default)}
-      end)
+                      fn({:colors, _}) -> {:colors, Keyword.get(config, :colors, new_colors)}
+                        ({:limit, current}) when current > infinity_limit ->   {:limit, Keyword.get(config, :limit, infinity_limit)}
+                        ({key, default}) -> {key, Keyword.get(config, key, default)}
+                      end)
     if Keyword.get(new_config, :scope, :local) == :global  do
       newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
       Process.put(:history_config, newer_config)

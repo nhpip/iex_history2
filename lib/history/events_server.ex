@@ -23,6 +23,7 @@
 #
 
 defmodule History.Events.Server do
+  @moduledoc false
   
   @size_check_interval 60 * 1000
   @table_limit_exceeded_factor 0.1
@@ -177,7 +178,7 @@ end
                     if is_pid(kbh_pid),
                        do: send(kbh_pid, :exit),
                        else: :erlang.trace(server_pid, false, [:receive])
-                    Map.put(process_info, shell_pid, %{shell_config | queue: {0, []}, keystroke_monitor_pid: nil});
+                    Map.put(process_info, shell_pid, %{shell_config | queue: {0, []}, keystroke_monitor_pid: nil})
                 (_, process_info) ->
                     process_info
       end)
@@ -246,15 +247,15 @@ end
                   (_) -> false 
     end) 
     |> case do
-      {_, shell_config} when is_map(shell_config) ->
+      {_, %{server_pid: server_pid, shell_pid: shell_pid, user_driver_group: user_driver_group, user_driver: user_driver}} ->
         data = to_string(data)
-        new_process_info = save_traced_command(data, shell_config.shell_pid, process_info)
-        snippet = String.slice(data, 0, 20) 
-                  |> String.replace(~r/\s+/, " ")
-        send(shell_config.user_driver_group, {shell_config.user_driver, {:data, "{:success, :history, #{inspect(snippet)}}\n"}}) 
-        send(shell_config.shell_pid, {:eval, shell_config.server_pid, data, 1, {"", :other}})        
+        new_process_info = save_traced_command(data, shell_pid, process_info)
+        snippet = String.slice(data, 0, 20) |> String.replace(~r/\s+/, " ")
+        send(user_driver_group, {user_driver, {:data, "\n{:success, :history, #{inspect(snippet)}}\n"}}) 
+        send(shell_pid, {:eval, server_pid, data, 1, {"", :other}})        
         {:noreply, new_process_info}
-      _ -> 
+      
+        _ -> 
         {:noreply, process_info}  
       end
   end
@@ -366,8 +367,9 @@ end
           do_keystroke_activity_monitor(dest)
           
        {_, pid, :receive, {_, {:data, @editor_key}}} -> 
-        send(dest, {:editor_key, pid})
-        do_keystroke_activity_monitor(dest)        
+          send(dest, {:editor_key, pid})
+          do_keystroke_activity_monitor(dest)  
+              
         _ ->
           do_keystroke_activity_monitor(dest)    
       end
@@ -391,9 +393,10 @@ end
     end
     
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: last_command}, command, :scan_action) do
+    command = String.replace(command, ~r/\s+/, " ")
     send(user_driver, {user_driver_group, 
-                {:requests, [{:move_rel, -String.length(last_command)}, :delete_after_cursor, 
-                             {:insert_chars_over, :unicode, String.replace(command, ~r/\s+/, " ")}]}
+                {:requests, [{:move_rel, -String.length(last_command)}, :new_prompt, :delete_after_cursor,
+                             {:insert_chars_over, :unicode, command}]}
     })
   end
   
@@ -412,9 +415,7 @@ end
   defp paste_command(command, shell_pid, process_info) do
     case Map.get(process_info, shell_pid) do
       %{user_driver: user_driver, user_driver_group: user_driver_group} = shell_config ->
-        #snippet = String.slice(command, 1, 20)
         send(user_driver_group, {user_driver, {:data, String.replace(command, ~r/\s+/, " ")}})
-        #send(shell_pid, {:eval, shell_config.server_pid, command, 1, {"", :other}})
         %{process_info | shell_pid => %{shell_config | paste_buffer: command}}
       _ ->
         process_info
@@ -435,57 +436,67 @@ end
     case Enum.find(process_info, fn({k, v}) -> is_pid(k) && v.user_driver == driver_pid end) do
       {_, %{queue: {_sp, []}}} ->
         process_info
-              
-      {_,  %{last_scan_command: ""}} when operation == :enter ->
-        process_info
-
-      {_,  %{last_scan_command: "", paste_buffer: ""}} when operation == :enter ->
-        process_info
-              
-      {shell_pid,  %{queue: {_sp, queue}, last_scan_command: command} = shell_config} when operation == :enter and bit_size(command) > 0 ->
-        send_to_shell(shell_config, command)
-        send_to_shell(shell_config, :move_line_up)
-        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
-
-      {shell_pid,  %{queue: {_sp, queue}, last_scan_command: command, paste_buffer: ""} = shell_config} when operation == :editor ->
-        send_to_shell(shell_config, "", :scan_action)
-        send_to_shell(shell_config, command, :open_editor)
-        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
-
-      {shell_pid,  %{queue: {_sp, queue}, paste_buffer: command} = shell_config} when operation == :editor ->
-        send_to_shell(shell_config, "", :scan_action)
-        send_to_shell(shell_config, command, :open_editor)
-        %{process_info | shell_pid => %{shell_config | queue: {0, queue}, pending_command: "", paste_buffer: "", last_direction: :none}}
-    
-      {shell_pid,  %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config} ->
-        queue_size = Enum.count(queue)
-        get_search_position(current_search_pos, queue_size, last_direction, operation)
-        |> handle_cursor_action(shell_config, operation)
-        |> then(fn(new_shell_config) -> %{process_info | shell_pid => new_shell_config} end) 
+                 
+      {shell_pid,  shell_config} ->
+        handle_cursor_action(shell_pid, shell_config, process_info, operation) 
         
       _ ->
         process_info
     end
   end
+
+  defp handle_cursor_action(_, %{last_scan_command: ""}, process_info, :enter) do
+    process_info
+  end
   
-  defp handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :down) when search_pos > 0 do
+  defp handle_cursor_action(_, %{last_scan_command: "", paste_buffer: ""}, process_info, :enter) do
+    process_info
+  end
+  
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :enter) when byte_size(command) > 0 do
+    send_to_shell(shell_config, command)
+    send_to_shell(shell_config, :move_line_up)
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+  end
+  
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
+    send_to_shell(shell_config, "", :scan_action)
+    send_to_shell(shell_config, command, :open_editor)
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+  end
+  
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, paste_buffer: command} = shell_config, process_info, :editor) do
+    send_to_shell(shell_config, "", :scan_action)
+    send_to_shell(shell_config, command, :open_editor)
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+  end
+  
+  defp handle_cursor_action(shell_pid, %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config, process_info, operation) do
+    queue_size = Enum.count(queue)
+    get_search_position(current_search_pos, queue_size, last_direction, operation)
+    |> do_handle_cursor_action(shell_config, operation)
+    |> then(fn(new_shell_config) -> %{process_info | shell_pid => new_shell_config} end) 
+  end
+
+  
+  defp do_handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :down) when search_pos > 0 do
      command = Enum.at(queue, search_pos)
      send_to_shell(shell_config, command, :scan_action)
      %{shell_config | queue: {search_pos, queue}, last_direction: :down, last_scan_command: command}    
   end
   
-  defp handle_cursor_action(search_pos, %{queue: {_, queue}, last_direction: :none} = shell_config, :down) when search_pos == 0 do
+  defp do_handle_cursor_action(search_pos, %{queue: {_, queue}, last_direction: :none} = shell_config, :down) when search_pos == 0 do
     send_to_shell(shell_config, "", :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :none, last_scan_command: ""} 
  end
  
-  defp handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :down) when search_pos == 0 do
+  defp do_handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :down) when search_pos == 0 do
     command = Enum.at(queue, search_pos)
     send_to_shell(shell_config, command, :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :none, last_scan_command: command} 
   end
 
-  defp handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :up) do
+  defp do_handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :up) do
     command = Enum.at(queue, search_pos)
     send_to_shell(shell_config, command, :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :up, last_scan_command: command}    
@@ -516,8 +527,7 @@ end
     if @save_immediate_buffer_duplicates do
       do_queue_insert(command, queue)
     else
-      [last_command | _] = queue
-      if last_command != command,
+      if List.first(queue) != command,
          do: do_queue_insert(command, queue),
          else: {0, queue}
     end
@@ -526,12 +536,11 @@ end
   defp do_queue_insert(command, queue) do
     size = Enum.count(queue)
     cond do
-      String.contains?(command, "{:success, :history, ") ->
+      String.contains?(command, "\n{:success, :history, ") ->
         {0, queue}
     
       size >= @history_buffer_size ->
-        queue = Enum.take(queue, size-1)
-        {0, [command | queue]}
+        {0, [command | Enum.take(queue, size-1)]}
       
       true -> 
         {0, [command | queue]}
@@ -561,7 +570,7 @@ end
       Code.format_string!(test_command)
       true
     catch
-      _,_ -> false
+      _, _ -> false
     end
   end
 
@@ -665,7 +674,7 @@ end
       {{_, tokens}, _} = Code.eval_string(":elixir.string_to_tokens(#{inspect command},  1, \"\", [])")
       tokens
     catch
-      _,_ ->
+      _, _ ->
         {{_, tokens}, _} = Code.eval_string(":elixir.string_to_tokens(#{inspect command}, 1,  1, \"\", [])")
         tokens
     end
