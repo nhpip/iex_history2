@@ -191,9 +191,9 @@ defmodule History.Bindings do
         send(pid, :ok_done)
 
       {:unbind, vars, pid} ->
-        Enum.map(vars, fn label ->
-          :ets.delete(db_labels.ets_name, label)
-          History.Store.delete_data(db_labels.store_name, label)
+        Enum.each(vars, fn label ->
+            :ets.delete(db_labels.ets_name, label)
+            History.Store.delete_data(db_labels.store_name, label)
         end)
         size = :ets.info(config.db_labels.ets_name, :size)
         send(pid, :ok_done)

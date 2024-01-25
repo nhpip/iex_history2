@@ -76,6 +76,7 @@ defmodule History.Events do
   def get_history_item(i) do
     do_get_history_item(i)
     |> pp_history_items(state(:number) + i)
+    nil
   end
 
   @doc false
@@ -83,6 +84,7 @@ defmodule History.Events do
     real_start = if is_atom(start), do: 1, else: start
     do_get_history_range(start, stop)
     |> pp_history_items(real_start)
+    nil
   end
 
   @doc false
@@ -139,18 +141,19 @@ defmodule History.Events do
   @doc false
   def state(how \\ :normal) do
     my_node = History.my_real_node()
-    count = case Server.get_state() do
-      %{} = map ->
-        Enum.map(map,
-              fn({_pid, %{beam_node: node, size: size}}) ->
-                if node ==  my_node,
-                   do: [node: node, size: size],
-                   else: :ok;
-              (_) -> :ok end)
-        |> Enum.filter(&(&1!=:ok)) |> List.flatten() |> Keyword.get(:size)
-      _ ->
+    server_state = Server.get_state()
+    count = if is_map(server_state) do
+        Enum.map(server_state,
+              fn({_pid, %{beam_node: node, size: size}}) when node == my_node ->
+                   [node: node, size: size]
+                (_) -> :ok 
+        end)
+        |> Enum.filter(&(&1 != :ok)) 
+        |> List.flatten() 
+        |> Keyword.get(:size)
+      else
         0
-    end
+      end  
     string = "#{IO.ANSI.white()}Current history is #{IO.ANSI.red()}#{count} #{IO.ANSI.white()}commands in size"
     if how == :pretty do
       IO.puts("#{string}")
@@ -239,7 +242,6 @@ defmodule History.Events do
         display_formatted_date(count, date, String.replace(new_command, ~r/\s+/, " "))
         count + 1
       end)
-      nil
   end
 
   defp get_command_width() do
@@ -294,7 +296,7 @@ defmodule History.Events do
     %{store_name: store_name, store_filename: store_filename, server_pid: server_pid, shell_pid: self(),
       size: 0, prepend_ids: nil, pending_command: "",  node: server_node, beam_node: beam_node, user_driver: user_driver,
       port: :port, success_count: nil, last_command: nil, queue: {0, []}, user_driver_group: user_driver_group,
-      scan_direction: nil, last_direction: :up, key_buffer_history_pid: nil, last_scan_command: ""}
+      scan_direction: nil, last_direction: :up, keystroke_monitor_pid: nil, last_scan_command: ""}
   end
 
   defp register_or_start_tracer_service(local_shell_state) do
@@ -319,14 +321,15 @@ defmodule History.Events do
 
   def get_shell_info() do
     user_driver = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [Process.group_leader()])[:dictionary][:user_drv]
-IO.inspect(user_driver)
     link_info = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [user_driver])[:links]
-IO.inspect(link_info)
     port = Enum.filter(link_info, &is_port(&1)) |> hd()
     {user_driver, port}
   end
 
-  defp unix_to_date(unix), do:
-    DateTime.from_unix!(round(unix/1000)) |> DateTime.to_string() |> String.replace("Z", "")
-
+  defp unix_to_date(unix) do
+    DateTime.from_unix!(round(unix / 1000)) 
+    |> DateTime.to_string() 
+    |> String.replace("Z", "")
+  end
+  
 end

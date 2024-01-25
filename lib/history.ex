@@ -24,18 +24,43 @@
 
 defmodule History do
   @moduledoc """
-    Saves shell history and optionally variable bindings between shell sessions.
+  Saves shell history and variable bindings between shell sessions.
 
-    Allows the user to display history, and re-issue historic commands, made much easier since the
-    variable bindings are saved.
+  Allows the user to display history, and re-issue historic commands, made much easier since the variable bindings are saved.
 
-    For ease History can be enabled in `~/.iex.exs` for example:
+  History can be enabled in `~/.iex.exs` for example:
 
       Code.append_path("~/github/history/_build/dev/lib/iex_history/ebin")
       History.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
-    Of course `Code.append_path ` may not be required depending on how the project is imported.
+  The application can, of course, be added as a dependency to mix.exs
 
+  ## Functions
+    
+      iex> hl()             - Will list the entire history.
+      
+      iex> hl(val)          - Will list `val` entries from the start if val is positive, or from the end if negative.
+      
+      iex> hl(start, stop)  - Will list entries between `start` and `stop`.
+      
+      iex> hs(string)       -  Will list entries that match all or part the query string.
+      
+      iex> hx(pos)          - Will execute the expression at position `pos`.
+      
+      iex> hc(pos)          - Will copy the expression at position pos to the shell.
+      
+      iex> hb()             - Displays the current bindings.
+      
+      iex> hi()             - Summary
+  
+  ## Admin Functions
+  
+      iex> History.clear_history()
+      
+      iex> History.clear_bindings()
+          
+  ## Configuration
+    
     The following options can be set:
 
       [
@@ -58,6 +83,9 @@ defmodule History do
         ]
       ]
 
+
+    `:import` Will import history query functions to the shell.
+        
     `:hide_history_commands ` This will prevent all calls to `History.*` from been saved.
 
     NOTE: `History.x/1` is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
@@ -69,14 +97,14 @@ defmodule History do
     This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating
     `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
 
-    `:prepend_identifiers ` If this is enabled it will prepend identifiers when a call to `x = History(val)` is issued.
+    `:prepend_identifiers ` If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
     For example:
 
       enabled:
           iex> time = Time.utc_now().second
           14
-          iex> new_time = History.x(1)
+          iex> new_time = hx(1)
           22
 
           iex> new_time
@@ -84,14 +112,14 @@ defmodule History do
           iex> time
           13                  # However, the original date variable is unchanged
 
-          iex> History.h()
+          iex> hl()
           1: 2021-09-01 17:13:13: time = Time.utc_now().second
           2: 2021-09-01 17:13:22: new_time =  time = Time.utc_now().second    # We see the binding to new_time
 
         disabled:
           iex> time = Time.utc_now().second
           43
-          iex> new_time = History.x(1)
+          iex> new_time = hx(1)
           50
 
           iex> new_time       # New time is assigned to variable time
@@ -99,7 +127,7 @@ defmodule History do
           iex> time
           50                  # However, this time the original time variable has also changed
 
-          iex> History.h
+          iex> hl()
           1: 2021-09-01 17:17:43: time = Time.utc_now().second
           2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
 
@@ -124,8 +152,8 @@ defmodule History do
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
-  @excluded_history_functions [".h(", ".x()", ".c("]
-  @excluded_history_imports [ "hc(", "hl(", "hs(", "hx(", "hb("]
+  @excluded_history_functions [".h(", ".x(", ".c("]
+  @excluded_history_imports   ["hc(", "hl(", "hs(", "hx(", "hb(", "hi("]
   @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150
@@ -168,7 +196,7 @@ defmodule History do
       new_config = init_save_config(config)
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
       if Keyword.get(new_config, :import),
-        do: inject_command("import History, only: [hl: 0, hl: 1, hs: 1, hs: 2, hc: 1, hx: 1, hb: 0, hi: 0]")
+        do: inject_command("import History, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0]")
       History.Events.initialize(new_config)
       |> History.Bindings.initialize()
       |> set_enabled()
@@ -233,22 +261,47 @@ defmodule History do
   end
 
   @doc """
-    Displays the entire history from last position back (negative number).
+  Displays the entire history from the most recent entry back (negative number),
+  or from the oldest entry forward (positive number)
   """
-  def hl(val) when val > 0,
-    do: hs(-val)
+  @spec hl(integer()) :: nil 
+  def hl(val) when val < 0 do
+    is_enabled!()
+    try do
+      History.Events.get_history_item(val)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+  end
     
-  def hl(val),
-    do: hs(val)
+  def hl(val) when val > 0 do
+    is_enabled!()
+    try do
+      History.Events.get_history_items(1, val)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+end
+
+  @doc """
+  Specify a range, the atoms :start and :stop can also be used.
+  """
+  @spec hl(integer(), integer()) :: nil 
+  def hl(start, stop) do
+    is_enabled!()
+    try do
+      History.Events.get_history_items(start, stop)
+    catch
+      _,_ -> {:error, :not_found}
+    end
+  end
       
   @doc """
-    If the argument is a string it displays the history that contain or match entirely the passed argument.
-    If the argument is a positive integer it displays the command at that index.
-    If the argument is a negative number it displays the history that many items from the end.
+  Returns the list of expressions where all or part of the string matches.
+  
+  The original expression does not need to be a string.
   """
-  @spec hs(String.t() | integer) :: atom
-  def hs(val)
-
+  @spec hs(String.t()) :: nil
   def hs(match) do
     is_enabled!()
     try do
@@ -257,22 +310,11 @@ defmodule History do
       _,_ -> {:error, :not_found}
     end
   end
-
-  @doc """
-    Specify a range, the atoms :start and :stop can also be used.
-  """
-  def hs(start, stop) do
-    is_enabled!()
-    try do
-      History.Events.get_history_items(start, stop)
-    catch
-      _,_ -> {:error, :not_found}
-    end
-  end
   
   @doc """
-    Invokes the command at index 'i'.
+  Invokes the command at index 'i'.
   """
+  @spec hx(integer()) :: any() 
   def hx(i) do
     is_enabled!()
     try do
@@ -285,8 +327,9 @@ defmodule History do
   end
 
   @doc """
-    Copies the command at index 'i' and pastes it to the shell
+  Copies the command at index 'i' and pastes it to the shell.
   """
+  @spec hl(integer()) :: any() 
   def hc(i) do
     is_enabled!()
     try do
@@ -297,13 +340,13 @@ defmodule History do
   end
   
   @doc """
-    Show bindings
+  Show the variable bindings.
   """
   def hb(),
     do: get_bindings()
   
   @doc """
-    Show history information summary
+  Show history information summary.
   """
   def hi(),
     do: state()
@@ -312,8 +355,8 @@ defmodule History do
   # Backwards compatibility
   ###
   def h(), do: hl()
-  def h(val), do: hs(val)
-  def h(start, stop), do: hs(start, stop)
+  def h(val), do: hl(val)
+  def h(start, stop), do: hl(start, stop)
   def c(val), do: hc(val)
   def x(val), do: hx(val)
   
