@@ -260,7 +260,7 @@ defmodule History do
     try do
       History.Events.get_history()
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
 
@@ -273,8 +273,9 @@ defmodule History do
     is_enabled!()
     try do
       History.Events.get_history_item(val)
+      :ok
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
     
@@ -282,8 +283,9 @@ defmodule History do
     is_enabled!()
     try do
       History.Events.get_history_items(1, val)
+      :ok
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
 end
 
@@ -295,8 +297,9 @@ end
     is_enabled!()
     try do
       History.Events.get_history_items(start, stop)
+      :ok
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
       
@@ -310,8 +313,9 @@ end
     is_enabled!()
     try do
       History.Events.get_history_item(match)
+      :ok
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
   
@@ -324,9 +328,9 @@ end
     try do
       History.Events.execute_history_item(i)
     catch
-      _,{:badmatch, nil} -> {:error, :not_found}
-      :error,%CompileError{description: descr} -> {:error, descr}
-      e,r -> {e, r}
+      _, {:badmatch, nil} -> {:error, :not_found}
+      :error, %CompileError{description: descr} -> {:error, descr}
+       error, rsn -> {error, rsn}
     end
   end
 
@@ -339,7 +343,7 @@ end
     try do
       History.Events.copy_paste_history_item(i)
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
   
@@ -349,7 +353,7 @@ end
     try do
       History.Events.edit_history_item(i)
     catch
-      _,_ -> {:error, :not_found}
+      _, _ -> {:error, :not_found}
     end
   end
   
@@ -430,7 +434,15 @@ end
   def get_bindings() do
     History.Bindings.get_bindings()
   end
-
+  
+  def get_binding(var) when is_bitstring(var) do
+    History.Bindings.get_binding(String.to_atom(var))
+  end
+  
+  def get_binding(var) do
+    History.Bindings.get_binding(var)
+  end
+  
   @doc """
     Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
   """
@@ -557,6 +569,16 @@ end
     filename
   end
 
+  def save_binding(var, value) do
+    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}") 
+    :ok 
+  end
+  
+  def save_binding(value) do
+    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}") 
+    :ok 
+  end
+  
   @doc false
   def my_real_node(), do:
     :erlang.node(Process.group_leader())
@@ -611,7 +633,8 @@ end
   defp inject_command_all_servers(command) do
     Enum.each(Process.list(),
                   fn(pid) ->
-                      if (server = :group.whereis_shell()) != nil,
+                      server = :group.whereis_shell()
+                      if not is_nil(server),
                          do: send(pid, {:eval, server, command, 1, {"", :other}})
                   end)
   end

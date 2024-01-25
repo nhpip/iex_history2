@@ -241,7 +241,11 @@ end
   end
 
   def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, process_info) do
-    case Enum.find(process_info, fn({k,v}) when is_pid(k) and is_map(v) -> v.server_pid == server_pid; (_) -> false end) do
+    Enum.find(process_info, 
+                fn({k, v}) when is_pid(k) and is_map(v) -> v.server_pid == server_pid 
+                  (_) -> false 
+    end) 
+    |> case do
       {_, shell_config} when is_map(shell_config) ->
         data = to_string(data)
         new_process_info = save_traced_command(data, shell_config.shell_pid, process_info)
@@ -428,17 +432,17 @@ end
   end
   
   defp cursor_action_handler(driver_pid, process_info, operation) do
-    case Enum.find(process_info, fn({k,v}) -> is_pid(k) && v.user_driver == driver_pid end) do
+    case Enum.find(process_info, fn({k, v}) -> is_pid(k) && v.user_driver == driver_pid end) do
       {_, %{queue: {_sp, []}}} ->
         process_info
               
       {_,  %{last_scan_command: ""}} when operation == :enter ->
         process_info
 
-      {_,  %{last_scan_command: "", paste_buffer: ""} = _shell_config} when operation == :enter ->
+      {_,  %{last_scan_command: "", paste_buffer: ""}} when operation == :enter ->
         process_info
               
-      {shell_pid,  %{queue: {_sp, queue}, last_scan_command: command} = shell_config} when operation == :enter ->
+      {shell_pid,  %{queue: {_sp, queue}, last_scan_command: command} = shell_config} when operation == :enter and bit_size(command) > 0 ->
         send_to_shell(shell_config, command)
         send_to_shell(shell_config, :move_line_up)
         %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
@@ -453,7 +457,6 @@ end
         send_to_shell(shell_config, command, :open_editor)
         %{process_info | shell_pid => %{shell_config | queue: {0, queue}, pending_command: "", paste_buffer: "", last_direction: :none}}
     
-  
       {shell_pid,  %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config} ->
         queue_size = Enum.count(queue)
         get_search_position(current_search_pos, queue_size, last_direction, operation)
@@ -522,11 +525,16 @@ end
 
   defp do_queue_insert(command, queue) do
     size = Enum.count(queue)
-    if size >= @history_buffer_size do
-      queue = Enum.take(queue, size-1)
-      {0, [command | queue]}
-    else
-      {0, [command | queue]}
+    cond do
+      String.contains?(command, "{:success, :history, ") ->
+        {0, queue}
+    
+      size >= @history_buffer_size ->
+        queue = Enum.take(queue, size-1)
+        {0, [command | queue]}
+      
+      true -> 
+        {0, [command | queue]}
     end
   end
 
@@ -540,14 +548,14 @@ end
   end
 
   defp do_validate_command(%{pending_command: command} = shell_config, process_info, shell_pid) do
-    if is_command_valid?(command) do
+    if command_valid?(command) do
       {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     else
       {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     end
   end
 
-  defp is_command_valid?(command) do
+  defp command_valid?(command) do
     try do
       test_command = find_invalid_comments(command)
       Code.format_string!(test_command)
@@ -642,7 +650,7 @@ end
   defp find_history_x_identifiers(command) do
     tokens = string_to_tokens(command)
     {_, quoted} = Enum.reduce_while(tokens, [],
-                    fn({:alias, _, :History} = history, acc) -> {:halt, [history | acc]};
+                    fn({:alias, _, :History} = history, acc) -> {:halt, [history | acc]}
                       (token, acc) -> {:cont, [token | acc]}
                     end)
                   |> Enum.reverse()

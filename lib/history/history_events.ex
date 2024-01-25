@@ -47,8 +47,7 @@ defmodule History.Events do
   def get_history() do
     History.configuration(:scope, :local)
     |> do_get_history()
-    |> pp_history_items(1)
-    nil 
+    |> pp_history_items(1) 
   end
 
   @doc false
@@ -64,20 +63,18 @@ defmodule History.Events do
               count + 1
             end
     end)
-    nil
   end
 
   @doc false
   def get_history_item(i) when i >= 1 do
     {date, command} = do_get_history_item(i)
-    display_formatted_date(i, date, String.replace(command, ~r/\s+/, " "))
+    display_formatted_date(i, date, command)
   end
 
   @doc false
   def get_history_item(i) do
     do_get_history_item(i)
     |> pp_history_items(state(:number) + i)
-    nil
   end
 
   @doc false
@@ -85,7 +82,6 @@ defmodule History.Events do
     real_start = if is_atom(start), do: 1, else: start
     do_get_history_range(start, stop)
     |> pp_history_items(real_start)
-    nil
   end
 
   @doc false
@@ -124,15 +120,19 @@ defmodule History.Events do
 
   @doc false
   def clear_history(range) do
-    if History.configuration(:scope, :local) != :global do
-      Server.clear_history(range)
-    else
-      if range == :all, do:
+    cond do 
+      History.configuration(:scope, :local) != :global ->
+        Server.clear_history(range)
+    
+     range == :all ->
         History.get_log_path() <> "/erlang-shell*"
         |> Path.wildcard()
         |> Enum.each(fn file -> File.rm(file) end)
-    end
-  end
+     
+     true -> 
+      nil
+   end
+ end
 
   @doc false
   def stop_clear() do
@@ -240,22 +240,33 @@ defmodule History.Events do
     raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
 
   defp pp_history_items(items, start) do
-    display_width = get_command_width()
     Enum.reduce(items, start,
       fn({date, command}, count) ->
-        new_command = if String.length(command) > display_width,
-                          do: String.slice(command, 0, display_width) <> " .....",
-                          else: command
-        display_formatted_date(count, date, String.replace(new_command, ~r/\s+/, " "))
+        display_formatted_date(count, date, command)
         count + 1
       end)
   end
 
+  defp clean_command(command) do
+    clean_command(command, get_command_width())
+  end
+  
+  def clean_command(command, display_width) when byte_size(command) > display_width do
+    String.replace(command, ~r/\s+/, " ")
+    |> String.slice(0, display_width)
+    |> Kernel.<>(" ...")    
+  end
+  
+  def clean_command(command, _) do
+    String.replace(command, ~r/\s+/, " ")
+  end
+  
   defp get_command_width() do
     History.configuration(:command_display_width, nil)
   end
 
   defp display_formatted_date(count, date, command) do
+    command = clean_command(command)
     show_date? = History.configuration(:show_date, true)
     scope = History.configuration(:scope, :local)
     if show_date? && scope != :global,
@@ -275,8 +286,8 @@ defmodule History.Events do
                       else: @random_string
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) end)
-    |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
+    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) && not String.starts_with?(cmd, hide_string) end)
+   # |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
 
@@ -319,7 +330,10 @@ defmodule History.Events do
     prepend_ids? = History.configuration(:prepend_identifiers, true)
     save_invalid = History.configuration(:save_invalid_results, true)
     key_buffer_history = History.configuration(:key_buffer_history, true)
-    real_limit = if (limit = History.configuration(:history_limit, :infinity)) == :infinity, do: @infinity_limit, else: limit
+    real_limit = case History.configuration(:history_limit, :infinity) do 
+        :infinity ->  @infinity_limit
+        limit -> limit
+    end
     process_info_state =
           %{scope: scope, hide_history_commands: hide_history_cmds, store_count: 0, limit: real_limit, module_alias: nil,
             prepend_identifiers: prepend_ids?, save_invalid_results: save_invalid, key_buffer_history: key_buffer_history}
