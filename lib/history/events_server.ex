@@ -262,6 +262,7 @@ defmodule History.Events.Server do
   end
 
   def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, process_info) do
+    data = to_string(data)
     Enum.find(
       process_info,
       fn
@@ -270,8 +271,10 @@ defmodule History.Events.Server do
       end
     )
     |> case do
+      {_, %{data_in_editor: ^data, shell_pid: shell_pid} = shell_config} ->
+        {:noreply, %{process_info | shell_pid => %{shell_config | data_in_editor: ""}}}
+        
       {_, %{server_pid: server_pid, shell_pid: shell_pid, user_driver_group: user_driver_group, user_driver: user_driver}} ->
-        data = to_string(data)
         new_process_info = save_traced_command(data, shell_pid, process_info)
         snippet = String.slice(data, 0, 20) |> String.replace(~r/\s+/, " ")
         send(user_driver_group, {user_driver, {:data, "\n{:success, :history, #{inspect(snippet)}}\n"}})
@@ -401,7 +404,6 @@ defmodule History.Events.Server do
         do_keystroke_activity_monitor(dest)
 
       {_, pid, :receive, {_, {:data, @editor_key}}} ->
-        IO.inspect(:editor)
         send(dest, {:editor_key, pid})
         do_keystroke_activity_monitor(dest)
 
@@ -520,13 +522,13 @@ defmodule History.Events.Server do
   defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
     send_to_shell(shell_config, "", :scan_action)
     send_to_shell(shell_config, command, :open_editor)
-    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none, data_in_editor: command}}
   end
 
   defp handle_cursor_action(shell_pid, %{queue: {_, queue}, paste_buffer: command} = shell_config, process_info, :editor) do
     send_to_shell(shell_config, "", :scan_action)
     send_to_shell(shell_config, command, :open_editor)
-    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, paste_buffer: "", last_direction: :none, data_in_editor: command}}
   end
 
   defp handle_cursor_action(shell_pid, %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config, process_info, operation) do
@@ -649,12 +651,12 @@ defmodule History.Events.Server do
 
     case Map.get(process_info, shell_pid) do
       %{queue: queue} = shell_config when do_not_save == true ->
-        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers, queue: queue_insert(command, queue)}}
+        %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers, queue: queue_insert(command, queue), data_in_editor: ""}}
 
       %{queue: queue} = shell_config ->
         key = System.os_time(:millisecond)
         History.Store.save_data(shell_config.store_name, {key, command})
-        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue)}}
+        %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue), data_in_editor: ""}}
 
       _ ->
         process_info

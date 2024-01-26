@@ -59,7 +59,7 @@ defmodule History do
   
       export VISUAL="vim"
 
-  ## Admin Functions
+  ## Special Functions
 
       iex> History.add_binding(var, val)
       

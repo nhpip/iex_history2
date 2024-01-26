@@ -301,7 +301,6 @@ defmodule History.Events do
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
     |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) && not String.starts_with?(cmd, hide_string) end)
-    # |> Enum.filter(fn {_date, cmd} -> not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
 
@@ -348,7 +347,8 @@ defmodule History.Events do
       last_direction: :none,
       keystroke_monitor_pid: nil,
       last_scan_command: "",
-      paste_buffer: ""
+      paste_buffer: "",
+      data_in_editor: ""
     }
   end
 
