@@ -22,7 +22,8 @@
 # SOFTWARE.
 #
 
-defmodule History.Store do
+defmodule IExHistory2.Store do
+  @moduledoc false
 
   @doc false
   def open_store(name, filename, scope, store_count \\ 0) do
@@ -66,24 +67,19 @@ defmodule History.Store do
   end
 
   @doc false
-  def delete_all_objects(name), do:
-    :dets.delete_all_objects(name)
+  def delete_all_objects(name), do: :dets.delete_all_objects(name)
 
   @doc false
-  def info(name), do:
-    :dets.info(name)
+  def info(name), do: :dets.info(name)
 
   @doc false
-  def info(name, what), do:
-    :dets.info(name, what)
+  def info(name, what), do: :dets.info(name, what)
 
   @doc false
-  def get_all_objects(name), do:
-    :dets.foldl(fn(event, acc) -> [event | acc] end, [], name)
+  def get_all_objects(name), do: :dets.foldl(fn event, acc -> [event | acc] end, [], name)
 
   @doc false
   def foldl(name, init, fun) do
     :dets.foldl(fun, init, name)
   end
-
 end
