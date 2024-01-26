@@ -181,7 +181,8 @@ defmodule IExHistory2 do
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
 
   @excluded_history_functions [".h(", ".x(", ".c("]
-  @excluded_history_imports ["hc(", "hl(", "hs(", "hx(", "hb(", "hi("]
+  @excluded_history_imports ["hc(", "hl(", "hs(", "hx(", "hb(", "hi(", "he(",
+                             "hc ", "hl ", "hs ", "hx ", "hb ", "hi ", "he "]
   @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150

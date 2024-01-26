@@ -664,10 +664,10 @@ defmodule IExHistory2.Events.Server do
 
   defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true, prepend_identifiers: prepend_ids?} = process_info) do
     {_, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
-    do_not_save = String.contains?(command, IExHistory2.exclude_from_history())
+    do_not_save = String.starts_with?(command, IExHistory2.exclude_from_history())
 
     case Map.get(process_info, shell_pid) do
-      %{queue: queue} = shell_config when do_not_save == true ->
+      %{queue: queue} = shell_config when do_not_save ->
         %{process_info | shell_pid => %{shell_config | prepend_ids: identifiers, queue: queue_insert(command, queue), data_in_editor: ""}}
 
       %{queue: queue} = shell_config ->
