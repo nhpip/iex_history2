@@ -72,13 +72,23 @@ defmodule History.Bindings do
     end
   end
 
+  @doc false
+  def get_bindings(pid) do
+    try do
+      {_, dict} = Process.info(pid, :dictionary)
+      :ets.tab2list(Keyword.get(dict, :history_bindings_ets_label))
+    catch
+      _, _ -> []
+    end
+  end
+    
   def get_binding(var) do
     case :ets.lookup(Process.get(:history_bindings_ets_label), var) do
       [{_, val}] -> val
       _ -> raise("not found")
     end
   end
-
+  
   @doc false
   def get_value(label, ets_name) do
     case :ets.lookup(ets_name, label) do

@@ -69,6 +69,9 @@ defmodule History do
       
       iex> History.clear_bindings()
           
+  The functions `History.add_binding/2` and `History.get_binding/1` allows variables
+  to be set in a module that is invoked in the shell to be accessible in the shell.
+          
   ## Navigation
           
   The application uses a different set of keys for navigation, and attempts to present multi-line 
@@ -420,7 +423,7 @@ defmodule History do
   end
 
   @doc """
-    Clears the bindings.
+  Clears the bindings.
   """
   def clear_bindings() do
     History.Bindings.clear()
@@ -428,7 +431,7 @@ defmodule History do
   end
 
   @doc """
-      Clears the history and bindings then stops the service. If `scope` is ` :global` the IEx session needs restarting for the changes to take effect.
+  Clears the history and bindings then stops the service. If `scope` is ` :global` the IEx session needs restarting for the changes to take effect.
   """
   def stop_clear() do
     History.Events.stop_clear()
@@ -441,35 +444,92 @@ defmodule History do
   end
 
   @doc """
-    Returns `true` or `false` depending on if history is enabled.
+  Returns `true` or `false` depending on if history is enabled.
   """
   def is_enabled?() do
     Process.get(:history_is_enabled, false)
   end
 
   @doc """
-    Returns the current shell bindings.
+  Returns the current shell bindings.
   """
   def get_bindings() do
     History.Bindings.get_bindings()
   end
 
+  @doc """
+  This helper function can be used when testing code (for example a module pasted into the shell).
+  It allows a variable that is set in the shell to be available in a module under test. For example:
+  
+      defmodule VarTest do
+        def get_me(val) do
+          if History.get_binding(:path_to_use) == :path1 do
+            val + 100
+          else
+            val + 200
+          end
+        end     
+      end
+      
+      iex> path_to_use = :path1
+      :path1
+      iex> VarTest.get_me(50)
+      150
+      iex> path_to_use = :path2
+      :path2
+      iex> VarTest.get_me(50)
+
+  """
   def get_binding(var) when is_bitstring(var) do
     History.Bindings.get_binding(String.to_atom(var))
   end
 
   def get_binding(var) do
-    History.Bindings.get_binding(var)
+    try do
+      History.Bindings.get_binding(var)
+    rescue
+    _ -> raise("undefined variable #{var}")  
+    end
+  end
+  
+  @doc """
+  This helper function can be used when testing code (for example a module pasted into the shell).
+  It allows a variable to be set that will become available in the shell. For example:
+  
+      defmodule VarTest do
+        def set_me(var) do
+          var = var * 2
+          History.add_binding(:test_var, var)
+          var + 100
+        end
+      end
+  
+      iex> VarTest.set_me(7)
+      
+      iex> test_var
+      14
+        
+  """
+  @spec add_binding(atom() | String.t(), any()) :: :ok
+  def add_binding(var, value) do
+    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
+    :ok
+  end
+
+  @doc false
+  def add_binding(value) do
+    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
+    :ok
   end
 
   @doc """
-    Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
+  Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
   """
   def unbind(vars) when is_list(vars), do: History.Bindings.unbind(vars)
   def unbind(var), do: unbind([var])
 
   @doc """
-    Saves the current configuration to file.
+  Saves the current configuration to file.
   """
   def save_config(filename) do
     data = :io_lib.format("~p.", [configuration()]) |> List.flatten()
@@ -477,9 +537,9 @@ defmodule History do
   end
 
   @doc """
-    Loads the current configuration to file `History.save_config()`.
+  Loads the current configuration to file `History.save_config()`.
 
-    NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to `History.initialize()`
+  NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to `History.initialize()`
   """
   def load_config(filename) do
     config = do_load_config(filename)
@@ -585,16 +645,6 @@ defmodule History do
     filename = :filename.basedir(:user_cache, ~c"erlang-history") |> to_string()
     File.mkdir_p!(filename)
     filename
-  end
-
-  def add_binding(var, value) do
-    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
-    :ok
-  end
-
-  def add_binding(value) do
-    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
-    :ok
   end
 
   @doc false

@@ -36,7 +36,9 @@ defmodule History.Events.Server do
   @editor_key <<23>> # ctrl+o
   @modify_key <<05>> # ctrl+e
   @abandon_key <<01>> # ctrl+a
-
+  @enter_key1 <<10>>
+  @enter_key2 <<13>>
+  
   use GenServer
 
   @doc false
@@ -415,6 +417,14 @@ defmodule History.Events.Server do
         send(dest, {:abandon_key, pid})
         do_keystroke_activity_monitor(dest)
                 
+      {_, pid, :receive, {_, {:data, @enter_key1}}} ->
+        send(dest, {:enter_key, pid})
+        do_keystroke_activity_monitor(dest)
+                
+      {_, pid, :receive, {_, {:data, @enter_key2}}} ->
+        send(dest, {:enter_key, pid})
+        do_keystroke_activity_monitor(dest)
+        
       _ ->
         do_keystroke_activity_monitor(dest)
     end
@@ -531,6 +541,16 @@ defmodule History.Events.Server do
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, paste_buffer: "", last_direction: :none, data_in_editor: command}}
   end
 
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command} = shell_config, process_info, :enter)
+      when byte_size(command) > 0 do
+    send(shell_pid, {:eval, server_pid, command, 1, {"", :other}})
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+  end
+  
+  defp handle_cursor_action(_, _, process_info, :enter) do
+    process_info
+  end
+  
   defp handle_cursor_action(shell_pid, %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config, process_info, operation) do
     queue_size = Enum.count(queue)
     get_search_position(current_search_pos, queue_size, last_direction, operation)
