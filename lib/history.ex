@@ -478,15 +478,28 @@ defmodule History do
       iex> path_to_use = :path2
       :path2
       iex> VarTest.get_me(50)
-
+      
+  The variable can be represented as an atom or string.      
   """
   def get_binding(var) when is_bitstring(var) do
-    History.Bindings.get_binding(String.to_atom(var))
+    get_binding(String.to_atom(var))
   end
 
   def get_binding(var) do
     try do
       History.Bindings.get_binding(var)
+    rescue
+    _ -> raise("undefined variable #{var}")  
+    end
+  end
+  
+  def get_binding(var, name) when is_bitstring(var) do
+    get_binding(String.to_atom(var), name)
+  end
+  
+  def get_binding(var, name) do
+    try do
+      History.Bindings.get_binding(var, name)
     rescue
     _ -> raise("undefined variable #{var}")  
     end
@@ -509,6 +522,7 @@ defmodule History do
       iex> test_var
       14
         
+  The variable can be represented as an atom or string.      
   """
   @spec add_binding(atom() | String.t(), any()) :: :ok
   def add_binding(var, value) do
@@ -522,6 +536,25 @@ defmodule History do
     :ok
   end
 
+  def register(nil) do
+    nil
+  end
+  
+  def register(name) do
+    Process.register(self(), name)  
+  end
+  
+  @doc false
+  def eval_on_shell(value, name) do
+    inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
+    :ok
+  end
+    
+  def eval_on_shell(var, value, name) do
+    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
+    :ok
+  end
+  
   @doc """
   Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
   """
@@ -692,7 +725,7 @@ defmodule History do
   def persistence_mode(_), do: {:ok, false, :no_label, :no_node}
 
   @doc false
-  def inject_command(command), do: History.Bindings.inject_command(command)
+  def inject_command(command, name \\ nil), do: History.Bindings.inject_command(command, name)
 
   defp inject_command_all_servers(command) do
     Enum.each(
@@ -741,7 +774,7 @@ defmodule History do
           {key, default} -> {key, Keyword.get(config, key, default)}
         end
       )
-
+            
     if Keyword.get(new_config, :scope, :local) == :global do
       newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
       Process.put(:history_config, newer_config)

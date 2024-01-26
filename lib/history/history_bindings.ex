@@ -89,6 +89,17 @@ defmodule History.Bindings do
     end
   end
   
+  def get_binding(var, name) do
+    pid = if is_atom(name), 
+      do: Process.whereis(name),
+      else: name
+    {_, dict} = Process.info(pid, :dictionary)
+    case :ets.lookup(Keyword.get(dict, :history_bindings_ets_label), var) do
+      [{_, val}] -> val
+      _ -> raise("not found")
+    end
+  end
+  
   @doc false
   def get_value(label, ets_name) do
     case :ets.lookup(ets_name, label) do
@@ -165,14 +176,28 @@ defmodule History.Bindings do
   end
 
   @doc false
-  def inject_command(command) do
+  def inject_command(command, name \\ nil)
+  
+  def inject_command(command, nil) do
     server = find_server()
     send(self(), {:eval, server, command, 1, {"", :other}})
   end
 
+  def inject_command(command, name) do
+    server = find_server(name)
+    send(Process.whereis(name), {:eval, server, command, 1, {"", :other}})
+  end
+  
   @doc false
-  def find_server(), do: :group.whereis_shell()
+  def find_server(),
+    do: :group.whereis_shell()
 
+  @doc false
+  def find_server(name) do
+    {_, dict} = Process.info(Process.whereis(name), :dictionary)
+    Keyword.get(dict, :iex_server)
+  end
+  
   defp init_stores(scope, my_node) do
     str_label =
       if scope in [:node, :local],
