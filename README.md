@@ -1,22 +1,20 @@
 # iex_history2 
+Improved shell history withe variable binding persistance.
 
-Saves shell history and optionally variable bindings between shell sessions.
+* Saves shell history between sessions.
+* Saves the shell variable bindings between shell sessions.
+* Navigation keys allow history traversal where multi-line pastes require a single key up/down.
+* Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
+* Editing can be done in-situ or in a text editor.
+* Shell variable bindings can be accessed outside of scope to assist in code debugging.
+* Can be enabled and state shared globally, or on individual shell sessions.
 
-Allows the user to display history, and re-issue historic commands, made much
-simpler since the variable bindings are saved.
-
-Imported short cuts allow searching, execution and editing of items in history.
-
-Navigation up and down recent history is also possible. Multi-line terms that were 
-pasted into the shell can be navigated with a single up/down key. Once a term is selected
-it can be edited in situ or in an editor.
-
-For ease IExHistory2 can be enabled in `~/.iex.exs` for example:
+`IExHistory2` can be enabled in `~/.iex.exs` for example:
 
     Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
     IExHistory2.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
 
-`Code.append_path` may not be required depending on how the project is imported.
+Alternatively the project can be added as a `Mix` dependancy.
 
 ## Navigation Keys
 
@@ -63,7 +61,7 @@ NOTE: To use `he/1` the environment variable VISUAL must be set to point to the 
     export VISUAL="vim"
 ```
 
-### hl()
+### iex> hl()
 Displays the entire history.
 ```
     iex> hl()
@@ -76,8 +74,7 @@ Displays the entire history.
     7: 2023-09-01 17:52:36: Process.get(:iex_history)
 ```
 
-### hl(val)
-If the argument is a string it displays the history that contain or match entirely the passed argument. 
+### iex> hl(val)
 If the argument is a positive integer it displays the command at that index.
 If the argument is a negative number it displays the history that many items from the end.
 ```
@@ -90,11 +87,11 @@ If the argument is a negative number it displays the history that many items fro
     7: 2023-09-01 17:52:36: Process.get(:iex_history)
 ```
 
-### hl(start, stop)
+### iex> hl(start, stop)
 Specify a range, the atoms :start and :stop can also be used.
 
 
-### hs(match)
+### iex> hs(match)
 Will search history for anything that matches the passed string.
 
     iex> hs("Applic")
@@ -104,7 +101,7 @@ Will search history for anything that matches the passed string.
     101: 2023-09-01 19:01:15: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :disabled])
     103: 2023-09-01 19:01:30: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :enabled])
  
-### hx(idx)
+### iex> hx(idx)
 Invokes the command at index 'i'.
 ```
     iex> hl(114)
@@ -114,7 +111,7 @@ Invokes the command at index 'i'.
     3
 ```
 
-### hc(idx)
+### iex> hc(idx)
 Copies the command at index 'i' and pastes it to the shell.
 ```
     iex> hl(114)
@@ -125,7 +122,7 @@ Copies the command at index 'i' and pastes it to the shell.
     iex> Enum.count([1, 2, 3])
 ``` 
 
-### he(idx)
+### iex> he(idx)
 Usefull for large terms or pasted modules. Will open the historical item in a text editor, ensuring
 the result is re-evaluated and returned to the shell.
 ```
@@ -139,11 +136,12 @@ NOTE: To use `he/1` the environment variable VISUAL must be set to point to the 
     export VISUAL="vim"
 ```
 
-### hb()
+### iex> hb()
 Shows the variable bindings.
 
-### hi()
+### iex> hi()
 Status summary.
+
 
 ## Binding Functions
 The functions IExHistory2.add_binding/2 and IExHistory2.get_binding/1 allows variables to be
