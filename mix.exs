@@ -4,11 +4,11 @@ defmodule IExHistory2.MixProject do
   def project do
     [
       app: :iex_history2,
-      version: "4.2.0",
+      version: "5.0",
       elixir: "~> 1.16.0-otp-26",
       description: description(),
       package: package(),
-      name: "IEx History",	
+      name: "IExHistory2",	
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
