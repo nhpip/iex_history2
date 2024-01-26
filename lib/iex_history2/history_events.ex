@@ -290,7 +290,9 @@ defmodule IExHistory2.Events do
 
   defp color(what), do: IExHistory2.get_color_code(what)
 
-  defp set_group_history(state), do: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
+  defp set_group_history(state) do
+    :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
+  end
 
   defp do_get_history(:global) do
     hide_string =

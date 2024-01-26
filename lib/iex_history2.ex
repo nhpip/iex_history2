@@ -478,9 +478,10 @@ defmodule IExHistory2 do
       iex> path_to_use = :path2
       :path2
       iex> VarTest.get_me(50)
-      
+      250
   The variable can be represented as an atom or string.      
   """
+  @spec get_binding(atom() | String.t()) :: any()
   def get_binding(var) when is_bitstring(var) do
     get_binding(String.to_atom(var))
   end
@@ -493,6 +494,12 @@ defmodule IExHistory2 do
     end
   end
   
+  @doc """
+  Experimental. Same as `get_binding/2`, but `name` is the registered name of a shell pid.
+  
+  See `register/1`
+  """
+  @spec get_binding(atom() | String.t(), atom()) :: any()  
   def get_binding(var, name) when is_bitstring(var) do
     get_binding(String.to_atom(var), name)
   end
@@ -529,17 +536,28 @@ defmodule IExHistory2 do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
     :ok
   end
+  
+  @doc """
+  Experimental. Same as `add_binding/2`, but `name` is the registered name of a shell pid.
+  
+  See `register/1`
+  """
+  @spec add_binding(atom() | String.t(), any(), atom()) :: :ok
+  def add_binding(var, value, name) do
+    inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
+    :ok
+  end
 
   @doc false
   def add_binding(value) do
     inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
     :ok
   end
-
-  def register(nil) do
-    nil
-  end
   
+  @doc """
+  Registers the shell under the name provided.
+  """
+  @spec register(atom()) :: :ok
   def register(name) do
     Process.register(self(), name)  
   end
@@ -550,6 +568,7 @@ defmodule IExHistory2 do
     :ok
   end
     
+  @doc false
   def eval_on_shell(var, value, name) do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
     :ok
@@ -692,7 +711,7 @@ defmodule IExHistory2 do
   @doc false
   def exclude_from_history() do
     aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["{:success, :history"]
+    @exclude_from_history ++ @excluded_history_imports ++ aliases
   end
 
   @doc false

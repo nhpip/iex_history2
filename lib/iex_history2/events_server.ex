@@ -274,13 +274,13 @@ defmodule IExHistory2.Events.Server do
     )
     |> case do
       {_, %{data_in_editor: ^data, shell_pid: shell_pid} = shell_config} ->
+        send(shell_pid, {:eval, server_pid, "{:ok, :no_changes_made}", 1, {"", :other}})
         {:noreply, %{process_info | shell_pid => %{shell_config | data_in_editor: ""}}}
         
-      {_, %{server_pid: server_pid, shell_pid: shell_pid, user_driver_group: user_driver_group, user_driver: user_driver}} ->
+      {_, %{server_pid: server_pid, shell_pid: shell_pid}} ->
         new_process_info = save_traced_command(data, shell_pid, process_info)
-        snippet = String.slice(data, 0, 20) |> String.replace(~r/\s+/, " ")
-        send(user_driver_group, {user_driver, {:data, "\n{:success, :history, #{inspect(snippet)}}\n"}})
         send(shell_pid, {:eval, server_pid, data, 1, {"", :other}})
+        send(shell_pid, {:eval, server_pid, "{:ok, :changes_made}", 1, {"", :other}})
         {:noreply, new_process_info}
 
       _ ->
@@ -614,9 +614,6 @@ defmodule IExHistory2.Events.Server do
     size = Enum.count(queue)
 
     cond do
-      String.contains?(command, "{:success, :history, ") ->
-        {0, queue}
-
       size >= @history_buffer_size ->
         {0, [command | Enum.take(queue, size - 1)]}
 
