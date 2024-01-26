@@ -31,12 +31,11 @@ defmodule History.Events.Server do
   @history_buffer_size 75
   @save_immediate_buffer_duplicates false
 
-  # ctrl+u
-  @history_scan_key <<21>>
-  # ctrl+k
-  @history_down_key <<11>>
-  @editor_key <<22>>
-  @enter_key "\r"
+  @history_up_key <<21>> # ctrl+u
+  @history_down_key <<11>>  # ctrl+k
+  @editor_key <<23>> # ctrl+o
+  @modify_key <<05>> # ctrl+e
+  @abandon_key <<01>> # ctrl+a
 
   use GenServer
 
@@ -293,7 +292,7 @@ defmodule History.Events.Server do
   ## historic commands to the shell. It knows to go up in the history not based on the ctrl-u been pressed but based on the state, after a single "up" the
   ## state is set to nil (which is assumed to also be up). To go down ctrl-k is pressed, we mark the state as down and then inject a
   ## ctrl-u to user_drv. The ctrl-u is captured by this code, except now the state says go down through history.
-  def handle_info({:scan_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+  def handle_info({:up_key, driver_pid}, %{key_buffer_history: true} = process_info) do
     new_process_info = cursor_action_handler(driver_pid, process_info, :up)
     {:noreply, new_process_info}
   end
@@ -313,6 +312,16 @@ defmodule History.Events.Server do
     {:noreply, new_process_info}
   end
 
+  def handle_info({:modify_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+    new_process_info = cursor_action_handler(driver_pid, process_info, :modify)
+    {:noreply, new_process_info}
+  end
+  
+  def handle_info({:abandon_key, driver_pid}, %{key_buffer_history: true} = process_info) do
+    new_process_info = cursor_action_handler(driver_pid, process_info, :abandon)
+    {:noreply, new_process_info}
+  end
+  
   def handle_info({:DOWN, _, :process, shell_pid, _}, %{scope: scope, store_count: store_count} = process_info) do
     case Map.get(process_info, shell_pid) do
       %{store_name: store_name, keystroke_monitor_pid: kbh_pid} ->
@@ -383,22 +392,27 @@ defmodule History.Events.Server do
 
   defp do_keystroke_activity_monitor(dest) do
     receive do
-      {_, pid, :receive, {_, {:data, @history_scan_key}}} ->
-        send(dest, {:scan_key, pid})
+      {_, pid, :receive, {_, {:data, @history_up_key}}} ->
+        send(dest, {:up_key, pid})
         do_keystroke_activity_monitor(dest)
 
       {_, pid, :receive, {_, {:data, @history_down_key}}} ->
         send(dest, {:down_key, pid})
         do_keystroke_activity_monitor(dest)
 
-      {_, pid, :receive, {_, {:data, @enter_key}}} ->
-        send(dest, {:enter_key, pid})
-        do_keystroke_activity_monitor(dest)
-
       {_, pid, :receive, {_, {:data, @editor_key}}} ->
+        IO.inspect(:editor)
         send(dest, {:editor_key, pid})
         do_keystroke_activity_monitor(dest)
 
+      {_, pid, :receive, {_, {:data, @modify_key}}} ->
+        send(dest, {:modify_key, pid})
+        do_keystroke_activity_monitor(dest)
+                
+      {_, pid, :receive, {_, {:data, @abandon_key}}} ->
+        send(dest, {:abandon_key, pid})
+        do_keystroke_activity_monitor(dest)
+                
       _ ->
         do_keystroke_activity_monitor(dest)
     end
@@ -417,8 +431,17 @@ defmodule History.Events.Server do
 
   defp create_activity_queue(_shell_config, _), do: {0, []}
 
+  defp format_for_editor(command) do
+    try do
+      Code.format_string!(command)
+      |> Enum.join()
+    rescue
+      _ -> command  
+    end
+  end
+  
   defp send_to_shell(%{user_driver: user_driver, server_pid: user_driver_group}, command, :open_editor) do
-    send(user_driver, {user_driver_group, {:open_editor, command}})
+    send(user_driver, {user_driver_group, {:open_editor, format_for_editor(command)}})
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: last_command}, command, :scan_action) do
@@ -432,7 +455,7 @@ defmodule History.Events.Server do
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command, :clear_line) do
-    send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :clear]}})
+    send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_after_cursor]}})
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :move_line_up) do
@@ -478,19 +501,20 @@ defmodule History.Events.Server do
     end
   end
 
-  defp handle_cursor_action(_, %{last_scan_command: ""}, process_info, :enter) do
-    process_info
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :abandon) do
+    send_to_shell(shell_config, command, :clear_line)
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", paste_buffer: "", last_direction: :none}}
   end
 
-  defp handle_cursor_action(_, %{last_scan_command: "", paste_buffer: ""}, process_info, :enter) do
-    process_info
-  end
-
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :enter)
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :modify)
        when byte_size(command) > 0 do
+    send_to_shell(shell_config, "", :scan_action)
     send_to_shell(shell_config, command)
-    send_to_shell(shell_config, :move_line_up)
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+  end
+
+  defp handle_cursor_action(_, _, process_info, :modify) do
+    process_info
   end
 
   defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
@@ -507,7 +531,6 @@ defmodule History.Events.Server do
 
   defp handle_cursor_action(shell_pid, %{queue: {current_search_pos, queue}, last_direction: last_direction} = shell_config, process_info, operation) do
     queue_size = Enum.count(queue)
-
     get_search_position(current_search_pos, queue_size, last_direction, operation)
     |> do_handle_cursor_action(shell_config, operation)
     |> then(fn new_shell_config -> %{process_info | shell_pid => new_shell_config} end)
@@ -569,7 +592,7 @@ defmodule History.Events.Server do
     size = Enum.count(queue)
 
     cond do
-      String.contains?(command, "\n{:success, :history, ") ->
+      String.contains?(command, "{:success, :history, ") ->
         {0, queue}
 
       size >= @history_buffer_size ->

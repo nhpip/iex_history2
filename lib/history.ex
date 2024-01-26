@@ -55,7 +55,9 @@ defmodule History do
       
       iex> hi()             - Summary
 
-  NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor
+  NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor:
+  
+      export VISUAL="vim"
 
   ## Admin Functions
 
@@ -67,6 +69,21 @@ defmodule History do
       
       iex> History.clear_bindings()
           
+  ## Navigation
+          
+  The application uses a different set of keys for navigation, and attempts to present multi-line 
+  terms and other items as a single line:
+  
+      ctrl^u    - Move up through history.
+      
+      ctrl^k    - Move down through history.
+      
+      ctrl^e    - Allows the currently displayed item to be modified.
+      
+      ctrl^w    - Opens the currently displayed item in an editor.
+              
+      ctrl^a    - Reset navigation, returns to the prompt.
+              
   ## Configuration
     
     The following options can be set:
@@ -274,11 +291,7 @@ defmodule History do
   def hl() do
     is_enabled!()
 
-    try do
-      History.Events.get_history()
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    query_search(fn ->  History.Events.get_history() end)
   end
 
   @doc """
@@ -289,23 +302,13 @@ defmodule History do
   def hl(val) when val < 0 do
     is_enabled!()
 
-    try do
-      History.Events.get_history_item(val)
-      :ok
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    query_search(fn ->  History.Events.get_history_item(val) end)
   end
 
   def hl(val) when val > 0 do
     is_enabled!()
 
-    try do
-      History.Events.get_history_items(1, val)
-      :ok
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    query_search(fn ->  History.Events.get_history_items(1, val) end)
   end
 
   @doc """
@@ -315,12 +318,8 @@ defmodule History do
   def hl(start, stop) do
     is_enabled!()
 
-    try do
-      History.Events.get_history_items(start, stop)
-      :ok
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    query_search(fn ->  History.Events.get_history_items(start, stop) end)
+
   end
 
   @doc """
@@ -332,12 +331,8 @@ defmodule History do
   def hs(match) do
     is_enabled!()
 
-    try do
-      History.Events.get_history_item(match)
-      :ok
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    query_search(fn ->  History.Events.get_history_item(match) end)
+
   end
 
   @doc """
@@ -362,23 +357,15 @@ defmodule History do
   @spec hc(integer()) :: any()
   def hc(i) do
     is_enabled!()
-
-    try do
-      History.Events.copy_paste_history_item(i)
-    catch
-      _, _ -> {:error, :not_found}
-    end
+    
+    query_search(fn -> History.Events.copy_paste_history_item(i) end)
   end
 
   @spec he(integer()) :: any()
   def he(i) do
     is_enabled!()
 
-    try do
-      History.Events.edit_history_item(i)
-    catch
-      _, _ -> {:error, :not_found}
-    end
+     query_search(fn ->  History.Events.edit_history_item(i) end)
   end
 
   @doc """
@@ -400,8 +387,10 @@ defmodule History do
   def h(val), do: hl(val)
   def h(start, stop), do: hl(start, stop)
   def c(val), do: hc(val)
-  def x(val), do: hx(val)
-
+  def x(val), do: hx(val)  
+  def save_binding(val), do: add_binding(val)
+  def save_binding(var, val), do: add_binding(var, val)
+    
   @doc """
     Clears the history and bindings. If `scope` is `:global`
     the IEx session needs restarting for the changes to take effect.
@@ -598,12 +587,12 @@ defmodule History do
     filename
   end
 
-  def save_binding(var, value) do
+  def add_binding(var, value) do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
     :ok
   end
 
-  def save_binding(value) do
+  def add_binding(value) do
     inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
     :ok
   end
@@ -620,7 +609,7 @@ defmodule History do
   @doc false
   def exclude_from_history() do
     aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["\n{:success, :history"]
+    @exclude_from_history ++ @excluded_history_imports ++ aliases ++ ["{:success, :history"]
   end
 
   @doc false
@@ -667,6 +656,14 @@ defmodule History do
     )
   end
 
+  defp query_search(fun) do
+    try do
+      fun.()
+    catch
+      _, _ -> {:error, :not_found}
+    end
+  end
+  
   defp is_enabled!() do
     if not is_enabled?(),
       do: raise(%ArgumentError{message: "History is not enabled"})
