@@ -344,7 +344,3 @@ Furthermore, if a `scope` of `:global` is selected following kernel option must 
 
     --erl "-kernel shell_history enabled"
 ```
-A word about aliases. Rather than using something like `alias IExHistory2, as: H`, please use `IExHistory2.alias(H)` instead.
-
-### IExHistory2.alias/1
-If you want to setup an alias like `alias IExHistory2, as: H`, rather than using `alias/2` from the shell, please use this function instead. So to create an alias of `H` use `IExHistory2.alias(H)`. This allows aliased functions to be handled correctly.
