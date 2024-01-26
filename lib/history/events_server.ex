@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 
-defmodule History.Events.Server do
+defmodule IExHistory2.Events.Server do
   @moduledoc false
 
   @size_check_interval 60 * 1000
@@ -102,7 +102,7 @@ defmodule History.Events.Server do
   def handle_call({:clear, shell_pid}, _from, process_info) do
     case Map.get(process_info, shell_pid) do
       %{store_name: store_name} = shell_info ->
-        History.Store.delete_all_objects(store_name)
+        IExHistory2.Store.delete_all_objects(store_name)
         {:reply, :ok_done, %{process_info | shell_pid => %{shell_info | queue: {0, []}}}}
 
       _ ->
@@ -121,8 +121,8 @@ defmodule History.Events.Server do
       process_info,
       fn
         {key, value} when is_pid(key) ->
-          History.Store.delete_all_objects(value.store_name)
-          History.Store.close_store(value.store_name)
+          IExHistory2.Store.delete_all_objects(value.store_name)
+          IExHistory2.Store.close_store(value.store_name)
 
         _ ->
           :ok
@@ -138,7 +138,7 @@ defmodule History.Events.Server do
         process_info,
         fn
           {pid, %{store_name: name} = map} ->
-            {pid, %{map | size: History.Store.info(name, :size)}}
+            {pid, %{map | size: IExHistory2.Store.info(name, :size)}}
 
           x ->
             x
@@ -330,7 +330,7 @@ defmodule History.Events.Server do
   def handle_info({:DOWN, _, :process, shell_pid, _}, %{scope: scope, store_count: store_count} = process_info) do
     case Map.get(process_info, shell_pid) do
       %{store_name: store_name, keystroke_monitor_pid: kbh_pid} ->
-        store_count = History.Store.close_store(store_name, scope, store_count)
+        store_count = IExHistory2.Store.close_store(store_name, scope, store_count)
         new_process_info = Map.delete(process_info, shell_pid)
         Process.exit(kbh_pid, :down)
         {:noreply, %{new_process_info | store_count: store_count}}
@@ -347,7 +347,7 @@ defmodule History.Events.Server do
 
       {pid, new_process_info} ->
         {%{store_name: store_name}, newer_process_info} = Map.get_and_update(new_process_info, pid, fn _ -> :pop end)
-        store_count = History.Store.close_store(store_name, scope, store_count)
+        store_count = IExHistory2.Store.close_store(store_name, scope, store_count)
         {:noreply, %{newer_process_info | store_count: store_count}}
     end
   end
@@ -367,7 +367,7 @@ defmodule History.Events.Server do
          %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info
        ) do
     if Map.get(process_info, shell_pid) == nil do
-      store_count = History.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
+      store_count = IExHistory2.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
       activity_pid = keystroke_activity_monitor(beam_node)
@@ -431,11 +431,11 @@ defmodule History.Events.Server do
   end
 
   defp create_activity_queue(%{store_name: store_name} = _shell_config, true) do
-    current_size = History.Store.info(store_name, :size)
+    current_size = IExHistory2.Store.info(store_name, :size)
 
     if current_size > 0 do
       start = min(@history_buffer_size, current_size)
-      {0, History.Events.do_get_history_registration(store_name, start * -1, current_size)}
+      {0, IExHistory2.Events.do_get_history_registration(store_name, start * -1, current_size)}
     else
       {0, []}
     end
@@ -667,7 +667,7 @@ defmodule History.Events.Server do
 
   defp do_save_traced_command(command, shell_pid, %{hide_history_commands: true, prepend_identifiers: prepend_ids?} = process_info) do
     {_, identifiers} = save_and_find_history_x_identifiers(command, prepend_ids?)
-    do_not_save = String.contains?(command, History.exclude_from_history())
+    do_not_save = String.contains?(command, IExHistory2.exclude_from_history())
 
     case Map.get(process_info, shell_pid) do
       %{queue: queue} = shell_config when do_not_save == true ->
@@ -675,7 +675,7 @@ defmodule History.Events.Server do
 
       %{queue: queue} = shell_config ->
         key = System.os_time(:millisecond)
-        History.Store.save_data(shell_config.store_name, {key, command})
+        IExHistory2.Store.save_data(shell_config.store_name, {key, command})
         %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue), data_in_editor: ""}}
 
       _ ->
@@ -692,7 +692,7 @@ defmodule History.Events.Server do
 
       %{queue: queue} = shell_config ->
         key = System.os_time(:millisecond)
-        History.Store.save_data(shell_config.store_name, {key, command})
+        IExHistory2.Store.save_data(shell_config.store_name, {key, command})
         %{process_info | shell_pid => %{shell_config | prepend_ids: nil, last_command: key, queue: queue_insert(command, queue)}}
 
       _ ->
@@ -705,7 +705,7 @@ defmodule History.Events.Server do
       process_info,
       fn
         {pid, %{store_name: name} = _map} ->
-          current_size = History.Store.info(name, :size)
+          current_size = IExHistory2.Store.info(name, :size)
           limit = if limit == :all, do: current_size, else: limit
 
           if current_size >= limit && type == :automatic,
@@ -725,38 +725,38 @@ defmodule History.Events.Server do
 
     if :ets.info(table_name) == :undefined do
       :ets.new(table_name, [:named_table, :ordered_set, :public])
-      History.Store.foldl(name, [], fn {key, _}, _ -> :ets.insert(table_name, {key, :ok}) end)
+      IExHistory2.Store.foldl(name, [], fn {key, _}, _ -> :ets.insert(table_name, {key, :ok}) end)
     end
 
     remove = if type == :automatic, do: round(limit * @table_limit_exceeded_factor) + current_size - limit, else: min(limit, current_size)
 
     Enum.reduce(0..remove, :ets.first(table_name), fn _, key ->
       :ets.delete(table_name, key)
-      History.Store.delete_data(name, key)
+      IExHistory2.Store.delete_data(name, key)
       :ets.first(table_name)
     end)
   end
 
   defp save_and_find_history_x_identifiers(command, true) do
-    if String.contains?(command, History.exec_name()),
+    if String.contains?(command, IExHistory2.exec_name()),
       do: {false, find_history_x_identifiers(command)},
       else: {true, nil}
   end
 
-  defp save_and_find_history_x_identifiers(command, _), do: {String.contains?(command, History.exec_name()), nil}
+  defp save_and_find_history_x_identifiers(command, _), do: {String.contains?(command, IExHistory2.exec_name()), nil}
 
   defp find_history_x_identifiers(command) do
     tokens = string_to_tokens(command)
 
     {_, quoted} =
       Enum.reduce_while(tokens, [], fn
-        {:alias, _, :History} = history, acc -> {:halt, [history | acc]}
+        {:alias, _, :IExHistory2} = history, acc -> {:halt, [history | acc]}
         token, acc -> {:cont, [token | acc]}
       end)
       |> Enum.reverse()
       |> :elixir.tokens_to_quoted("", [])
 
-    response = Macro.to_string(quoted) |> String.replace("History", "")
+    response = Macro.to_string(quoted) |> String.replace("IExHistory2", "")
     if response == "", do: nil, else: response
   end
 

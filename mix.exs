@@ -1,9 +1,9 @@
-defmodule History.MixProject do
+defmodule IExHistory2.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :iex_history,
+      app: :iex_history2,
       version: "4.2.0",
       elixir: "~> 1.16.0-otp-26",
       description: description(),
@@ -41,7 +41,7 @@ defmodule History.MixProject do
     [
       files: ~w(lib .formatter.exs mix.exs README* LICENSE*),
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/nhpip/history"}
+      links: %{"GitHub" => "https://github.com/nhpip/iex_history2"}
     ]
   end
 end

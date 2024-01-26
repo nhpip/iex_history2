@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 
-defmodule History.Events do
+defmodule IExHistory2.Events do
   @moduledoc false
 
   # So dets doesn't get too big, may find a better way
@@ -30,7 +30,7 @@ defmodule History.Events do
   @store_name "store_history_events"
   @random_string "adarwerwvwvevwwerxrwfx"
 
-  alias History.Events.Server
+  alias IExHistory2.Events.Server
 
   @doc false
   def initialize(config) do
@@ -38,7 +38,7 @@ defmodule History.Events do
 
     if scope != :global do
       set_group_history(:disabled)
-      History.persistence_mode(scope) |> do_initialize()
+      IExHistory2.persistence_mode(scope) |> do_initialize()
       config
     else
       set_group_history(:enabled)
@@ -48,14 +48,14 @@ defmodule History.Events do
 
   @doc false
   def get_history() do
-    History.configuration(:scope, :local)
+    IExHistory2.configuration(:scope, :local)
     |> do_get_history()
     |> pp_history_items(1)
   end
 
   @doc false
   def get_history_item(match) when is_binary(match) do
-    History.configuration(:scope, :local)
+    IExHistory2.configuration(:scope, :local)
     |> do_get_history()
     |> Enum.reduce(
       1,
@@ -93,9 +93,9 @@ defmodule History.Events do
   @doc false
   def execute_history_item(i) do
     {_date, command} = do_get_history_item(i)
-    {result, _} = Code.eval_string(command, History.get_bindings())
+    {result, _} = Code.eval_string(command, IExHistory2.get_bindings())
 
-    if History.configuration(:scope, :local) == :global,
+    if IExHistory2.configuration(:scope, :local) == :global,
       do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(command)]),
       else: Server.save_history_command(command)
 
@@ -116,10 +116,10 @@ defmodule History.Events do
 
   @doc false
   def clear() do
-    if History.configuration(:scope, :local) != :global do
+    if IExHistory2.configuration(:scope, :local) != :global do
       Server.clear()
     else
-      (History.get_log_path() <> "/erlang-shell*")
+      (IExHistory2.get_log_path() <> "/erlang-shell*")
       |> Path.wildcard()
       |> Enum.each(fn file -> File.rm(file) end)
     end
@@ -128,11 +128,11 @@ defmodule History.Events do
   @doc false
   def clear_history(range) do
     cond do
-      History.configuration(:scope, :local) != :global ->
+      IExHistory2.configuration(:scope, :local) != :global ->
         Server.clear_history(range)
 
       range == :all ->
-        (History.get_log_path() <> "/erlang-shell*")
+        (IExHistory2.get_log_path() <> "/erlang-shell*")
         |> Path.wildcard()
         |> Enum.each(fn file -> File.rm(file) end)
 
@@ -143,10 +143,10 @@ defmodule History.Events do
 
   @doc false
   def stop_clear() do
-    if History.configuration(:scope, :local) != :global do
+    if IExHistory2.configuration(:scope, :local) != :global do
       Server.stop_clear()
     else
-      (History.get_log_path() <> "/erlang-shell*")
+      (IExHistory2.get_log_path() <> "/erlang-shell*")
       |> Path.wildcard()
       |> Enum.each(fn file -> File.rm(file) end)
     end
@@ -154,7 +154,7 @@ defmodule History.Events do
 
   @doc false
   def state(how \\ :normal) do
-    my_node = History.my_real_node()
+    my_node = IExHistory2.my_real_node()
     server_state = Server.get_state()
 
     count =
@@ -215,7 +215,7 @@ defmodule History.Events do
   def do_get_history_registration(store_name, start, stop) do
     quantity = stop - start
 
-    History.Store.get_all_objects(store_name)
+    IExHistory2.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
     |> Enum.map(fn {_date, cmd} -> String.trim(cmd) end)
     |> Enum.slice(start, quantity)
@@ -229,7 +229,7 @@ defmodule History.Events do
 
   defp do_initialize(_), do: :not_ok
 
-  defp do_get_history_item(i) when i >= 1, do: History.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
+  defp do_get_history_item(i) when i >= 1, do: IExHistory2.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
 
   defp do_get_history_item(i), do: do_get_history_range(state(:number) + i, :stop)
 
@@ -246,7 +246,7 @@ defmodule History.Events do
     if start > history_size or stop > history_size,
       do: raise(%ArgumentError{message: "Values out of range, only #{history_size} entries exist"})
 
-    History.configuration(:scope, :local)
+    IExHistory2.configuration(:scope, :local)
     |> do_get_history()
     |> Enum.slice(start, quantity)
   end
@@ -275,39 +275,39 @@ defmodule History.Events do
   end
 
   defp get_command_width() do
-    History.configuration(:command_display_width, nil)
+    IExHistory2.configuration(:command_display_width, nil)
   end
 
   defp display_formatted_date(count, date, command) do
     command = clean_command(command)
-    show_date? = History.configuration(:show_date, true)
-    scope = History.configuration(:scope, :local)
+    show_date? = IExHistory2.configuration(:show_date, true)
+    scope = IExHistory2.configuration(:scope, :local)
 
     if show_date? && scope != :global,
       do: IO.puts("#{color(:index)}#{count}: #{color(:date)}#{date}: #{color(:command)}#{command}"),
       else: IO.puts("#{color(:index)}#{count}: #{color(:command)}#{command}")
   end
 
-  defp color(what), do: History.get_color_code(what)
+  defp color(what), do: IExHistory2.get_color_code(what)
 
   defp set_group_history(state), do: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
 
   defp do_get_history(:global) do
     hide_string =
-      if History.configuration(:hide_history_commands, true),
-        do: History.module_name(),
+      if IExHistory2.configuration(:hide_history_commands, true),
+        do: IExHistory2.module_name(),
         else: @random_string
 
     :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
     |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, History.exec_name()) && not String.starts_with?(cmd, hide_string) end)
+    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, IExHistory2.exec_name()) && not String.starts_with?(cmd, hide_string) end)
     |> Enum.reverse()
   end
 
   defp do_get_history(_) do
     store_name = Process.get(:history_events_store_name)
 
-    History.Store.get_all_objects(store_name)
+    IExHistory2.Store.get_all_objects(store_name)
     |> Enum.sort(:asc)
     |> Enum.map(fn {date, cmd} -> {unix_to_date(date), String.trim(cmd)} end)
   end
@@ -319,7 +319,7 @@ defmodule History.Events do
         else: Atom.to_string(scope)
 
     store_name = String.to_atom("#{@store_name}_#{str_label}")
-    store_filename = "#{History.get_log_path()}/history_#{str_label}.dat"
+    store_filename = "#{IExHistory2.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
     server_pid = :group.whereis_shell()
     server_node = :erlang.node(server_pid)
@@ -361,14 +361,14 @@ defmodule History.Events do
   end
 
   defp do_start_tracer_service() do
-    scope = History.configuration(:scope, :local)
-    hide_history_cmds = History.configuration(:hide_history_commands, true)
-    prepend_ids? = History.configuration(:prepend_identifiers, true)
-    save_invalid = History.configuration(:save_invalid_results, true)
-    key_buffer_history = History.configuration(:key_buffer_history, true)
+    scope = IExHistory2.configuration(:scope, :local)
+    hide_history_cmds = IExHistory2.configuration(:hide_history_commands, true)
+    prepend_ids? = IExHistory2.configuration(:prepend_identifiers, true)
+    save_invalid = IExHistory2.configuration(:save_invalid_results, true)
+    key_buffer_history = IExHistory2.configuration(:key_buffer_history, true)
 
     real_limit =
-      case History.configuration(:history_limit, :infinity) do
+      case IExHistory2.configuration(:history_limit, :infinity) do
         :infinity -> @infinity_limit
         limit -> limit
       end

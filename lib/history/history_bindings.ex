@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 
-defmodule History.Bindings do
+defmodule IExHistory2.Bindings do
   @moduledoc false
 
   @ets_name "ets_history_bindings"
@@ -36,7 +36,7 @@ defmodule History.Bindings do
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     save_bindings? = Keyword.get(config, :save_bindings, true)
-    if save_bindings?, do: History.persistence_mode(scope) |> do_initialize()
+    if save_bindings?, do: IExHistory2.persistence_mode(scope) |> do_initialize()
     config
   end
 
@@ -110,7 +110,7 @@ defmodule History.Bindings do
 
   @doc false
   def unbind(vars) do
-    save_bindings? = History.configuration(:save_bindings, true)
+    save_bindings? = IExHistory2.configuration(:save_bindings, true)
 
     if save_bindings? do
       send_msg({:unbind, vars, self()})
@@ -124,7 +124,7 @@ defmodule History.Bindings do
 
   @doc false
   def clear() do
-    save_bindings? = History.configuration(:save_bindings, true)
+    save_bindings? = IExHistory2.configuration(:save_bindings, true)
 
     if save_bindings? do
       send_msg({:clear, self()})
@@ -137,7 +137,7 @@ defmodule History.Bindings do
 
   @doc false
   def stop_clear() do
-    save_bindings? = History.configuration(:save_bindings, true)
+    save_bindings? = IExHistory2.configuration(:save_bindings, true)
 
     if save_bindings? do
       send_msg({:stop_clear, self()})
@@ -150,7 +150,7 @@ defmodule History.Bindings do
 
   @doc false
   def state(pretty \\ false) do
-    save_bindings? = History.configuration(:save_bindings, true)
+    save_bindings? = IExHistory2.configuration(:save_bindings, true)
 
     if save_bindings? do
       send_msg({:state, self()})
@@ -165,7 +165,7 @@ defmodule History.Bindings do
 
   @doc false
   def raw_state() do
-    save_bindings? = History.configuration(:save_bindings, true)
+    save_bindings? = IExHistory2.configuration(:save_bindings, true)
 
     if save_bindings? do
       send_msg({:state, self()})
@@ -206,7 +206,7 @@ defmodule History.Bindings do
 
     ets_name = String.to_atom("#{@ets_name}_#{str_label}")
     store_name = String.to_atom("#{@store_name}_#{str_label}")
-    store_filename = to_charlist("#{History.get_log_path()}/bindings_#{str_label}.dat")
+    store_filename = to_charlist("#{IExHistory2.get_log_path()}/bindings_#{str_label}.dat")
     Process.put(:history_bindings_ets_label, ets_name)
 
     if :ets.info(ets_name) == :undefined do
@@ -214,7 +214,7 @@ defmodule History.Bindings do
       :ets.give_away(ets_name, :erlang.whereis(:init), [])
     end
 
-    History.Store.open_store(store_name, store_filename, scope)
+    IExHistory2.Store.open_store(store_name, store_filename, scope)
 
     %{ets_name: ets_name, store_name: store_name, store_filename: store_filename}
   end
@@ -228,21 +228,21 @@ defmodule History.Bindings do
 
       {:clear, pid} ->
         :ets.delete_all_objects(db_labels.ets_name)
-        History.Store.delete_all_objects(db_labels.store_name)
+        IExHistory2.Store.delete_all_objects(db_labels.store_name)
         send(pid, :ok_done)
         size = :ets.info(config.db_labels.ets_name, :size)
         binding_evaluator_loop(%{config | binding_count: size})
 
       {:stop_clear, pid} ->
         :ets.delete_all_objects(db_labels.ets_name)
-        History.Store.delete_all_objects(db_labels.store_name)
-        History.Store.close_store(db_labels.store_name)
+        IExHistory2.Store.delete_all_objects(db_labels.store_name)
+        IExHistory2.Store.close_store(db_labels.store_name)
         send(pid, :ok_done)
 
       {:unbind, vars, pid} ->
         Enum.each(vars, fn label ->
           :ets.delete(db_labels.ets_name, label)
-          History.Store.delete_data(db_labels.store_name, label)
+          IExHistory2.Store.delete_data(db_labels.store_name, label)
         end)
 
         size = :ets.info(config.db_labels.ets_name, :size)
@@ -270,14 +270,14 @@ defmodule History.Bindings do
       case :ets.lookup(ets_name, label) do
         _ when value == :could_not_bind ->
           :ets.delete(ets_name, label)
-          History.Store.delete_data(store_name, label)
+          IExHistory2.Store.delete_data(store_name, label)
 
         [{_, ^value}] ->
           :ok
 
         _ ->
           :ets.insert(ets_name, {label, value})
-          History.Store.save_data(store_name, {label, value})
+          IExHistory2.Store.save_data(store_name, {label, value})
       end
     end)
   end
@@ -301,9 +301,9 @@ defmodule History.Bindings do
 
   defp load_bindings(%{ets_name: ets_name, store_name: store_name}) do
     bindings =
-      History.Store.foldl(store_name, [], fn {label, value}, acc ->
+      IExHistory2.Store.foldl(store_name, [], fn {label, value}, acc ->
         :ets.insert(ets_name, {label, value})
-        ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
+        ["#{label} = IExHistory2.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
       end)
       |> List.to_string()
 
@@ -321,7 +321,7 @@ defmodule History.Bindings do
     bindings =
       :ets.foldl(
         fn {label, _value}, acc ->
-          ["#{label} = History.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
+          ["#{label} = IExHistory2.Bindings.get_value(:#{label},:#{ets_name}); " | acc]
         end,
         [],
         ets_name
@@ -332,7 +332,7 @@ defmodule History.Bindings do
   end
 
   defp make_reg_name() do
-    gl_node = History.my_real_node() |> Atom.to_string()
+    gl_node = IExHistory2.my_real_node() |> Atom.to_string()
     String.to_atom("history_binding_finder_#{gl_node}")
   end
 

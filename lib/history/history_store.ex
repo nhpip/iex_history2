@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 
-defmodule History.Store do
+defmodule IExHistory2.Store do
   @moduledoc false
 
   @doc false
