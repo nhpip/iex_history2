@@ -1,4 +1,4 @@
-# history 
+# iex_history2 
 
 Saves shell history and optionally variable bindings between shell sessions.
 
