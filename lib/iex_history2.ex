@@ -116,8 +116,6 @@ defmodule IExHistory2 do
         
     `:hide_history_commands ` This will prevent all calls to `IExHistory2.*` from been saved.
 
-    NOTE: `IExHistory2.x/1` is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
-
     `:save_invalid_results ` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
     `:key_buffer_history ` If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
