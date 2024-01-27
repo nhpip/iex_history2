@@ -605,13 +605,9 @@ defmodule IExHistory2.Events.Server do
   defp do_queue_insert(command, queue) do
     size = Enum.count(queue)
 
-    cond do
-      size >= @history_buffer_size ->
-        {0, [command | Enum.take(queue, size - 1)]}
-
-      true ->
-        {0, [command | queue]}
-    end
+    if size >= @history_buffer_size,
+      do: {0, [command | Enum.take(queue, size - 1)]},
+      else: {0, [command | queue]}
   end
 
   defp validate_command(process_info, shell_pid) do

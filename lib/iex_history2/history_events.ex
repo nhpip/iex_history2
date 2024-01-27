@@ -336,8 +336,10 @@ defmodule IExHistory2.Events do
   defp history_item_may_contain?(command, match) do
     String.myers_difference(command, match) 
     |> Enum.filter(&(elem(&1, 0) == :eq))
-    |> Enum.map(fn {_,s} -> String.jaro_distance(s, match) end) 
-    |> then(fn([]) -> 0; (prob) -> Enum.max(prob) end)
+    |> Enum.map(fn {_, s} -> String.jaro_distance(s, match) end) 
+    |> then(fn([]) -> 0
+           (prob) -> Enum.max(prob)
+       end)
   end
   
   defp do_get_history(:global) do

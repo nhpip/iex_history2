@@ -29,10 +29,6 @@ defmodule IExHistory2.Bindings do
   @store_name "history_bindings"
   @bindings_check_interval 2500
 
-  defmodule Binding do
-    defstruct [:name, :value]
-  end
-
   @doc false
   def initialize(:not_ok), do: :not_ok
 
