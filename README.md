@@ -43,7 +43,11 @@ Key history navigation functions are automatically imported into the shell.
 
     iex> hl(start, stop)  - Will list entries between `start` and `stop`.
 
-    iex> hs(string)       -  Will list entries that match all or part the query string.
+    iex> hs(string)       - Will list entries that match all or part the query string.
+
+    iex> hsi(string)      - Case insensitive list entries that match all or part of the query string.
+
+    iex> hsa(string)      - Closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
 
     iex> hx(pos)          - Will execute the expression at position `pos`.
 

@@ -353,13 +353,14 @@ defmodule IExHistory2 do
   has a high likelihood of being a match.
 
   It uses a combination of Myers Difference and Jaro Distance to get a match. The
-  estimated closeness is indicated in the result (range 80% to 100%).
+  estimated closeness is indicated in the result with a default range of > 80%.
+  This can be set by the user.
   
   For large histories this command may take several seconds.
   
   The original expression does not need to be a string.
   """
-  @spec hsa(String.t()) :: nil
+  @spec hsa(String.t(), integer()) :: nil
   def hsa(match, closeness \\ 80) do
     is_enabled!()
 
