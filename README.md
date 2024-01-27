@@ -97,14 +97,31 @@ Specify a range, the atoms :start and :stop can also be used.
 
 ### iex> hs(match)
 Will search history for anything that matches the passed string.
-
+```
     iex> hs("Applic")
     34: 2023-09-01 18:10:39: Application.put_env(:kernel, :shell_history, :disabled)
     41: 2023-09-01 18:11:30: Application.get_env(:kernel, :shell_history)
     48: 2023-09-01 18:14:02: Application.put_env(:kernel, :shell_history, 0)
     101: 2023-09-01 19:01:15: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :disabled])
     103: 2023-09-01 19:01:30: :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, :enabled])
- 
+```
+
+### iex> hsi(match)
+Case insensitive version of `hs/1`.
+
+
+### iex> hsa(match, closeness \\ 80)
+Like `hsa/1` a case insensitive search, but also adds a closeness element to the search.
+
+It uses a combination of Myers Difference and Jaro Distance to get close to a match. The estimated 
+closeness is indicated in the result with a default range of > 80%. This can be set by the user.
+```
+    iex> hsa("map_rdce")
+    786: 83% 2024-01-27 15:01:05: h(Enum.map_reduce)
+    806: 83% 2024-01-27 15:21:49: h(Enum.map_reduce)
+    826: 83% 2024-01-27 16:19:24: h(Enum.map_reduce)
+```
+  
 ### iex> hx(idx)
 Invokes the command at index 'i'.
 ```
