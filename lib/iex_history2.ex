@@ -648,7 +648,7 @@ defmodule IExHistory2 do
       IExHistory2.configure(:colors, [index: :blue])
       IExHistory2.configure(:prepend_identifiers, true)
   """
-  @spec configure(Atom.t(), any) :: atom
+  @spec configure(atom(), any) :: atom
   def configure(kry, val)
 
   def configure(:show_date, value) when value in [true, false] do
