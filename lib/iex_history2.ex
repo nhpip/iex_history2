@@ -349,10 +349,9 @@ defmodule IExHistory2 do
   end
   
   @doc """
-  A case insensitive search the list of expressions where all or part of the string
-  has a high likelihood of being a match.
+  Like `hsa/1` a case insensitive search, but also adds a closeness element to the search.
 
-  It uses a combination of Myers Difference and Jaro Distance to get a match. The
+  It uses a combination of Myers Difference and Jaro Distance to get close to a match. The
   estimated closeness is indicated in the result with a default range of > 80%.
   This can be set by the user.
   
