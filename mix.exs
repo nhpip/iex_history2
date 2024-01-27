@@ -4,7 +4,7 @@ defmodule IExHistory2.MixProject do
   def project do
     [
       app: :iex_history2,
-      version: "5.0",
+      version: "5.0.0",
       elixir: "~> 1.16.0-otp-26",
       description: description(),
       package: package(),

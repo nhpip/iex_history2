@@ -27,7 +27,7 @@ Alternatively the project can be added as a `Mix` dependancy.
 
     ctrl^w    - Opens the currently displayed item in an editor.
 
-    ctrl^a    - Reset navigation, returns to the prompt.
+    ctrl^[    - Reset navigation, returns to the prompt.
 ```
 NOTE: To use `ctrl^w` the environment variable VISUAL must be set to point to the editor:
 ```

@@ -28,14 +28,14 @@ defmodule IExHistory2.Events.Server do
   @size_check_interval 60 * 1000
   @table_limit_exceeded_factor 0.1
 
-  @history_buffer_size 75
+  @history_buffer_size 150
   @save_immediate_buffer_duplicates false
 
   @history_up_key <<21>> # ctrl+u
   @history_down_key <<11>>  # ctrl+k
   @editor_key <<23>> # ctrl+o
   @modify_key <<05>> # ctrl+e
-  @abandon_key <<01>> # ctrl+a
+  @abandon_key <<27>> # ctrl+[
   @enter_key1 <<10>>
   @enter_key2 <<13>>
   
@@ -234,8 +234,8 @@ defmodule IExHistory2.Events.Server do
 
   def handle_info({:trace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
     case Map.get(process_info, shell_pid) do
-      shell_config when is_map(shell_config) ->
-        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: shell_config.pending_command <> command}}}
+      %{pending_command: pending_command} = shell_config when is_map(shell_config) ->
+        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: pending_command <> command}}}
 
       _ ->
         {:noreply, process_info}
@@ -458,7 +458,8 @@ defmodule IExHistory2.Events.Server do
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command, :clear_line) do
-    send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_after_cursor]}})
+     #send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_line, :redraw_prompt]}})
+     send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_line]}})
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :move_line_up) do
@@ -535,7 +536,7 @@ defmodule IExHistory2.Events.Server do
   defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command} = shell_config, process_info, :enter)
       when byte_size(command) > 0 do
     send(shell_pid, {:eval, server_pid, command, 1, {"", :other}})
-    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", pending_command: command, last_direction: :none}}
   end
   
   defp handle_cursor_action(_, _, process_info, :enter) do
@@ -630,7 +631,7 @@ defmodule IExHistory2.Events.Server do
       {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
     end
   end
-
+  
   defp command_valid?(command) do
     try do
       find_invalid_comments(command)
@@ -649,7 +650,9 @@ defmodule IExHistory2.Events.Server do
       else: command
   end
 
-  defp save_traced_command(command, shell_pid, process_info), do: do_save_traced_command(String.trim(command), shell_pid, process_info)
+  defp save_traced_command(command, shell_pid, process_info) do
+     do_save_traced_command(String.trim(command), shell_pid, process_info)
+  end
 
   defp do_save_traced_command("", _shell_pid, process_info), do: process_info
 
@@ -731,7 +734,8 @@ defmodule IExHistory2.Events.Server do
       else: {true, nil}
   end
 
-  defp save_and_find_history_x_identifiers(command, _), do: {String.contains?(command, IExHistory2.exec_name()), nil}
+  defp save_and_find_history_x_identifiers(command, _),
+    do: {String.contains?(command, IExHistory2.exec_name()), nil}
 
   defp find_history_x_identifiers(command) do
     tokens = string_to_tokens(command)

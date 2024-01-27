@@ -37,23 +37,27 @@ defmodule IExHistory2 do
 
   ## Functions
     
-      iex> hl()             - Will list the entire history.
+      iex> hl()             - list the entire history.
       
-      iex> hl(val)          - Will list `val` entries from the start if val is positive, or from the end if negative.
+      iex> hl(val)          - list `val` entries from the start if val is positive, or from the end if negative.
       
-      iex> hl(start, stop)  - Will list entries between `start` and `stop`.
+      iex> hl(start, stop)  - list entries between `start` and `stop`.
       
-      iex> hs(string)       -  Will list entries that match all or part the query string.
+      iex> hs(string)       - list entries that match all or part of the query string.
+
+      iex> hsi(string)      - case insensitive list entries that match all or part of the query string.
+
+      iex> hsa(string)      - closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
       
-      iex> hx(pos)          - Will execute the expression at position `pos`.
+      iex> hx(pos)          - execute the expression at position `pos`.
       
-      iex> hc(pos)          - Will copy the expression at position pos to the shell.
+      iex> hc(pos)          - copy the expression at position pos to the shell.
       
-      iex> he(pos)          - Edit the expression in a text editor.
+      iex> he(pos)          - edit the expression in a text editor.
       
-      iex> hb()             - Displays the current bindings.
+      iex> hb()             - show the current bindings.
       
-      iex> hi()             - Summary
+      iex> hi()             - summary
 
   NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor:
   
@@ -77,15 +81,15 @@ defmodule IExHistory2 do
   The application uses a different set of keys for navigation, and attempts to present multi-line 
   terms and other items as a single line:
   
-      ctrl^u    - Move up through history.
+      ctrl^u    - move up through history.
       
-      ctrl^k    - Move down through history.
+      ctrl^k    - move down through history.
       
-      ctrl^e    - Allows the currently displayed item to be modified.
+      ctrl^e    - allows the currently displayed item to be modified.
       
-      ctrl^w    - Opens the currently displayed item in an editor.
+      ctrl^w    - opens the currently displayed item in an editor.
               
-      ctrl^a    - Reset navigation, returns to the prompt.
+      ctrl^[    - reset navigation, returns to the prompt.
               
   ## Configuration
     
@@ -99,7 +103,6 @@ defmodule IExHistory2 do
         command_display_width: int,
         save_invalid_results: false,
         key_buffer_history: true,
-        import: true,
         show_date: true,
         save_bindings: true,
         colors: [
@@ -110,9 +113,6 @@ defmodule IExHistory2 do
           variable: :green
         ]
       ]
-
-
-    `:import` Will import history query functions to the shell.
         
     `:hide_history_commands ` This will prevent all calls to `IExHistory2.*` from been saved.
 
@@ -121,8 +121,9 @@ defmodule IExHistory2 do
     `:save_invalid_results ` If set to false, the default, commands that were evaluated incorrectly will not be saved.
 
     `:key_buffer_history ` If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
-    Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down.
-    This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating
+    Unlike the standard up/down arrow history this is command based not line based. So pasting of a large term or source code will only require 1 up or down key.
+    
+    This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 150 lines, although this can be changed by updating
     `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
 
     `:prepend_identifiers ` If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
@@ -178,15 +179,17 @@ defmodule IExHistory2 do
 
   @version "5.0"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
-  @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".x", "Elixir.")
+  @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".hx", "Elixir.")
 
+  @shell_imports [hl: 0, hl: 1, hl: 2, hs: 1, hsi: 1, hsa: 1,
+                  hsa: 2, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]
   @excluded_history_functions [".h(", ".x(", ".c("]
-  @excluded_history_imports ["hc(", "hl(", "hs(", "hx(", "hb(", "hi(", "he(",
-                             "hc ", "hl ", "hs ", "hx ", "hb ", "hi ", "he "]
+  @excluded_history_imports ["hc(", "hl(", "hs(", "hsi(", "hsa(", "hx(", "hb(", "hi(", "he(",
+                             "hc ", "hl", "hs ", "hsi ", "hsa ", "hx ", "hb ", "hi ", "he "]
   @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
 
   @default_width 150
-  @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green]
+  @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green, binding: :cyan]
   @default_config [
     scope: :local,
     history_limit: :infinity,
@@ -237,7 +240,7 @@ defmodule IExHistory2 do
       inject_command("IEx.configure(colors: [syntax_colors: [atom: :black]])")
 
       if Keyword.get(new_config, :import),
-        do: inject_command("import IExHistory2, only: [hl: 0, hl: 1, hl: 2, hs: 1, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]")
+        do: inject_command("import IExHistory2, only: #{inspect(@shell_imports)}")
 
       IExHistory2.Events.initialize(new_config)
       |> IExHistory2.Bindings.initialize()
@@ -248,11 +251,7 @@ defmodule IExHistory2 do
     end
   end
 
-  @doc """
-    If you want to setup an alias like `alias IExHistory2, as: H` rather than using `alias/2`
-    from the shell, please use this function instead. So to create an alias of `H` use `IExHistory2.alias(H)`.
-    This allows aliased functions to be handled correctly.
-  """
+  @doc false
   def alias(name) when is_atom(name) do
     if Process.get(:history_alias) == nil do
       string_name = Atom.to_string(name) |> String.replace("Elixir.", "")
@@ -267,17 +266,17 @@ defmodule IExHistory2 do
   end
 
   @doc """
-    Displays the current configuration.
+  Displays the current configuration.
   """
   def configuration(), do: Process.get(:history_config, [])
 
   @doc """
-    Displays the default configuration.
+  Displays the default configuration.
   """
   def default_config(), do: @default_config
 
   @doc """
-    Displays the current state:
+  Displays the current state:
 
       IExHistory2 version 2.0 is enabled:
         Current history is 199 commands in size.
@@ -290,7 +289,7 @@ defmodule IExHistory2 do
   end
 
   @doc """
-    Displays the entire history.
+  Displays the entire history.
   """
   def hl() do
     is_enabled!()
@@ -323,7 +322,6 @@ defmodule IExHistory2 do
     is_enabled!()
 
     query_search(fn ->  IExHistory2.Events.get_history_items(start, stop) end)
-
   end
 
   @doc """
@@ -335,10 +333,39 @@ defmodule IExHistory2 do
   def hs(match) do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.get_history_item(match) end)
-
+    query_search(fn ->  IExHistory2.Events.search_history_items(match, :exact) end)
   end
 
+  @doc """
+  A case insensitive search the list of expressions where all or part of the string matches.
+
+  The original expression does not need to be a string.
+  """
+  @spec hsi(String.t()) :: nil
+  def hsi(match) do
+    is_enabled!()
+
+    query_search(fn ->  IExHistory2.Events.search_history_items(match, :ignore_case) end)
+  end
+  
+  @doc """
+  A case insensitive search the list of expressions where all or part of the string
+  has a high likelihood of being a match.
+
+  It uses a combination of Myers Difference and Jaro Distance to get a match. The
+  estimated closeness is indicated in the result (range 80% to 100%).
+  
+  For large histories this command may take several seconds.
+  
+  The original expression does not need to be a string.
+  """
+  @spec hsa(String.t()) :: nil
+  def hsa(match, closeness \\ 80) do
+    is_enabled!()
+
+    query_search(fn ->  IExHistory2.Events.search_history_items(match, :approximate, closeness) end)
+  end
+  
   @doc """
   Invokes the command at index 'i'.
   """
@@ -376,7 +403,7 @@ defmodule IExHistory2 do
   Show the variable bindings.
   """
   def hb(),
-    do: get_bindings()
+    do: IExHistory2.Bindings.display_bindings()
 
   @doc """
   Show history information summary.
@@ -387,12 +414,19 @@ defmodule IExHistory2 do
   ###
   # Backwards compatibility
   ###
+  @doc false
   def h(), do: hl()
+  @doc false
   def h(val), do: hl(val)
+  @doc false
   def h(start, stop), do: hl(start, stop)
+  @doc false
   def c(val), do: hc(val)
-  def x(val), do: hx(val)  
+  @doc false
+  def x(val), do: hx(val)
+  @doc false  
   def save_binding(val), do: add_binding(val)
+  @doc false
   def save_binding(var, val), do: add_binding(var, val)
     
   @doc """
@@ -410,9 +444,9 @@ defmodule IExHistory2 do
   end
 
   @doc """
-    Clears the history only. If `scope` is `:global`
-    the IEx session needs restarting for the changes to take effect. If a value is passed it will clear that many history
-    entries from start, otherwise the entire history is cleared.
+  Clears the history only. If `scope` is `:global`
+  the IEx session needs restarting for the changes to take effect. If a value is passed it will clear that many history
+  entries from start, otherwise the entire history is cleared.
   """
   def clear_history(val \\ :all) do
     IExHistory2.Events.clear_history(val)

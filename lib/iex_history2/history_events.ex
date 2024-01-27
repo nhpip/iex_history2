@@ -54,22 +54,33 @@ defmodule IExHistory2.Events do
   end
 
   @doc false
-  def get_history_item(match) when is_binary(match) do
-    IExHistory2.configuration(:scope, :local)
-    |> do_get_history()
-    |> Enum.reduce(
-      1,
-      fn {date, command}, count ->
-        if String.contains?(command, match) do
-          display_formatted_date(count, date, command)
-          count + 1
-        else
-          count + 1
-        end
-      end
-    )
+  def search_history_items(match, closeness, distance \\ 100) when is_binary(match) do
+    results = IExHistory2.configuration(:scope, :local)
+      |> do_get_history()
+      |> Enum.map_reduce(1,
+            fn {date, command}, count ->
+              diff = history_item_contains?(command, match, closeness)
+              if (diff * 100) >= distance,
+              do: {{diff, count, date, command}, count + 1}, 
+              else: {[], count + 1}
+      end)
+      |> elem(0)
+      |> List.flatten()
+    
+    sorted = if closeness == :approximate,
+              do: Enum.sort_by(results, &(elem(&1, 0)), :desc),
+              else: Enum.sort_by(results, &(elem(&1, 1)), :asc)
+              
+    Enum.each(sorted, fn {diff, count, date, command} ->
+          if closeness == :approximate do 
+            match = "#{IO.ANSI.yellow()}#{inspect(round(diff* 100))}% "  
+            display_formatted_date(count, date, command, match)
+          else
+            display_formatted_date(count, date, command)              
+          end
+    end)
   end
-
+  
   @doc false
   def get_history_item(i) when i >= 1 do
     {date, command} = do_get_history_item(i)
@@ -114,6 +125,22 @@ defmodule IExHistory2.Events do
     Server.edit_command(command)
   end
 
+  @doc false
+  def find_history_item(match) do
+    IExHistory2.configuration(:scope, :local)
+    |> do_get_history()
+    |> Enum.map(
+            fn {_, command} ->
+              if String.starts_with?(String.replace(command, ~r/ +/, ""), match),
+                do: command,
+                else: []
+      end)
+      |> List.flatten()
+      |> List.last()
+      |> then(fn(nil) -> {:error, :not_found}
+                (val) -> {:ok, val} end)
+  end
+  
   @doc false
   def clear() do
     if IExHistory2.configuration(:scope, :local) != :global do
@@ -264,13 +291,13 @@ defmodule IExHistory2.Events do
     clean_command(command, get_command_width())
   end
 
-  def clean_command(command, display_width) when byte_size(command) > display_width do
+  defp clean_command(command, display_width) when byte_size(command) > display_width do
     String.replace(command, ~r/\s+/, " ")
     |> String.slice(0, display_width)
     |> Kernel.<>(" ...")
   end
 
-  def clean_command(command, _) do
+  defp clean_command(command, _) do
     String.replace(command, ~r/\s+/, " ")
   end
 
@@ -278,22 +305,41 @@ defmodule IExHistory2.Events do
     IExHistory2.configuration(:command_display_width, nil)
   end
 
-  defp display_formatted_date(count, date, command) do
+  defp display_formatted_date(count, date, command, match \\ "") do
     command = clean_command(command)
     show_date? = IExHistory2.configuration(:show_date, true)
     scope = IExHistory2.configuration(:scope, :local)
 
     if show_date? && scope != :global,
-      do: IO.puts("#{color(:index)}#{count}: #{color(:date)}#{date}: #{color(:command)}#{command}"),
-      else: IO.puts("#{color(:index)}#{count}: #{color(:command)}#{command}")
+      do: IO.puts("#{color(:index)}#{count}: #{match}#{color(:date)}#{date}: #{color(:command)}#{command}"),
+      else: IO.puts("#{color(:index)}#{count}: #{match}#{color(:command)}#{command}")
   end
 
-  defp color(what), do: IExHistory2.get_color_code(what)
+  @doc false
+  def color(what), do: IExHistory2.get_color_code(what)
 
   defp set_group_history(state) do
     :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
   end
 
+  defp history_item_contains?(command, match, closeness) do
+    lc_command = String.downcase(command)
+    lc_match = String.downcase(match)
+    cond do 
+      String.contains?(command, match) -> 1
+      closeness in [:ignore_case, :approximate] && String.contains?(lc_command, lc_match) -> 1
+      closeness == :approximate -> history_item_may_contain?(lc_command, lc_match) 
+      true -> 0
+    end
+  end
+
+  defp history_item_may_contain?(command, match) do
+    String.myers_difference(command, match) 
+    |> Enum.filter(&(elem(&1, 0) == :eq))
+    |> Enum.map(fn {_,s} -> String.jaro_distance(s, match) end) 
+    |> then(fn([]) -> 0; (prob) -> Enum.max(prob) end)
+  end
+  
   defp do_get_history(:global) do
     hide_string =
       if IExHistory2.configuration(:hide_history_commands, true),
@@ -388,13 +434,6 @@ defmodule IExHistory2.Events do
       }
 
     Server.start_link(process_info_state)
-  end
-
-  def get_shell_info() do
-    user_driver = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [Process.group_leader()])[:dictionary][:user_drv]
-    link_info = :rpc.call(:erlang.node(Process.group_leader()), Process, :info, [user_driver])[:links]
-    port = Enum.filter(link_info, &is_port(&1)) |> hd()
-    {user_driver, port}
   end
 
   defp unix_to_date(unix) do

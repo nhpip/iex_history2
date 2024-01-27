@@ -29,6 +29,10 @@ defmodule IExHistory2.Bindings do
   @store_name "history_bindings"
   @bindings_check_interval 2500
 
+  defmodule Binding do
+    defstruct [:name, :value]
+  end
+
   @doc false
   def initialize(:not_ok), do: :not_ok
 
@@ -63,6 +67,24 @@ defmodule IExHistory2.Bindings do
   @doc false
   def do_initialize(_), do: :not_ok
 
+   @doc false
+   def display_bindings() do
+    try do
+      import IExHistory2.Events, only: [color: 1]
+      get_bindings()
+      |> Enum.sort()
+      |> Enum.each(fn({name, val}) -> 
+              val = pp_binding(val, name)  
+              IO.puts("\n#{IO.ANSI.white()}Binding: #{color(:binding)}#{name}")
+              IO.puts("#{IO.ANSI.white()}Value:   #{val}")
+      end)
+      count = :ets.info(Process.get(:history_bindings_ets_label), :size)
+      IO.puts("\nTotal: #{count} variables")
+    catch
+      _, _ -> []
+    end
+  end
+  
   @doc false
   def get_bindings() do
     try do
@@ -82,6 +104,7 @@ defmodule IExHistory2.Bindings do
     end
   end
     
+  @doc false
   def get_binding(var) do
     case :ets.lookup(Process.get(:history_bindings_ets_label), var) do
       [{_, val}] -> val
@@ -89,6 +112,7 @@ defmodule IExHistory2.Bindings do
     end
   end
   
+  @doc false
   def get_binding(var, name) do
     pid = if is_atom(name), 
       do: Process.whereis(name),
@@ -352,4 +376,22 @@ defmodule IExHistory2.Bindings do
       1000 -> :nok
     end
   end
+  
+  defp pp_binding(value, name) when is_function(value) do
+    case IExHistory2.Events.find_history_item("#{name}=") do
+      {:ok, val} -> 
+        String.split(val, "=", parts: 2) 
+        |> List.last() 
+        |> String.trim()
+        |> then(fn v -> {:func, v} end)
+        |> pp_binding(name)
+        
+      _ -> pp_binding({:func, value}, name) 
+    end
+  end
+
+  defp pp_binding(value, _) do
+    String.slice(inspect(value, syntax_colors: IO.ANSI.syntax_colors, pretty: false, limit: 50), 0, 150)
+  end
+  
 end
