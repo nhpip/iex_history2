@@ -1,18 +1,19 @@
 # iex_history2 
-Improved shell history withe variable binding persistance.
+Improved shell history with variable binding persistance.
 
 * Saves shell history between sessions.
-* Saves the shell variable bindings between shell sessions.
+* Saves the shell variable bindings between VM restarts.
+* Ability to paste (most) terms into the shell.
 * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
 * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
 * Editing can be done in-situ or in a text editor.
-* Shell variable bindings can be accessed outside of scope of the shell to assist in code debugging.
+* Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
 * Can be enabled and state shared globally, or on individual shell sessions.
 
 `IExHistory2` can be enabled in `~/.iex.exs` for example:
 
     Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
-    IExHistory2.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
+    IExHistory2.initialize()
 
 Alternatively the project can be added as a `Mix` dependancy.
 
@@ -23,13 +24,13 @@ Alternatively the project can be added as a `Mix` dependancy.
 
     ctrl^k    - Move down through history.
 
-    ctrl^e    - Allows the currently displayed item to be modified.
+    ctrl^y    - Allows the currently displayed item to be modified.
 
-    ctrl^w    - Opens the currently displayed item in an editor.
+    ctrl^e    - Opens the currently displayed item in an editor.
 
     ctrl^[    - Reset navigation, returns to the prompt.
 ```
-NOTE: To use `ctrl^w` the environment variable EDITOR must be set to point to the editor:
+NOTE: To use `ctrl^e` the environment variable EDITOR must be set to point to your editor:
 ```
     export EDITOR="vim"
 ```
@@ -47,7 +48,7 @@ Key history navigation functions are automatically imported into the shell.
 
     iex> hsi(string)      - Case insensitive list entries that match all or part of the query string.
 
-    iex> hsa(string)      - Closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
+    iex> hsa(string, dist \\ 80)  - Closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
 
     iex> hx(pos)          - Will execute the expression at position `pos`.
 
