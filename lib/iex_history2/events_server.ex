@@ -640,10 +640,9 @@ defmodule IExHistory2.Events.Server do
     data = to_string(data)
     if String.contains?(data, "#") do
       Enum.reduce(regex, data, 
-                    fn reg, cmd -> 
-                        Regex.replace(reg, cmd, fn x -> "#{inspect(x)}" end)
-                    end
-      )
+            fn reg, cmd -> 
+                Regex.replace(reg, cmd, fn x -> "#{inspect(x)}" end)
+      end)
     else
       data
     end

@@ -38,7 +38,7 @@ defmodule IExHistory2 do
   `IExHistory2` can be enabled in `~/.iex.exs` for example:
 
       Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
-      IExHistory2.initialize()
+      IExHistory2.initialize(config)
 
   Alternatively the project can be added as a `Mix` dependancy.
 
@@ -133,7 +133,7 @@ defmodule IExHistory2 do
 
   ## Configuration
     
-  The following options can be set:
+  The following options can be set either as a keyword list in `.iex.exs`.
 
       [
         scope: :local,
@@ -157,6 +157,17 @@ defmodule IExHistory2 do
         ]
       ]
 
+  Or in `config/runtime.exs` if using Mix:
+ 
+      config :your_app, IExHistory2,
+        scope: :local,
+        history_limit: :infinity,
+        paste_eval_regex: [],
+        import: true,
+        ...
+   
+  ### Settings
+        
   To import short-cut functions set `import:` to true.
   
       import: true
@@ -238,7 +249,18 @@ defmodule IExHistory2 do
 
   ## Initialization
   
-  To initialize 
+  It is recommended to configure and start using `.iex.exs`, for  example:
+  
+      IExHistory2.initialize(history_limit: :infinity,
+                             scope: :local, 
+                             paste_eval_regex: ["#Extra"], 
+                             show_date: true, 
+                             colors: [index: :red])
+    
+  If using `Mix` the application should be started manually in the shell. 
+  
+      IExHistory2.initialize(:your_application_name)
+
   """
 
   @version "5.0"
