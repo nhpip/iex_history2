@@ -24,18 +24,25 @@
 
 defmodule IExHistory2 do
   @moduledoc """
-  Saves shell history and variable bindings between shell sessions.
+  Improved shell history with variable binding persistance.
 
-  Allows the user to display history, and re-issue historic commands, made much easier since the variable bindings are saved.
+  * Saves shell history between sessions.
+  * Saves the shell variable bindings between VM restarts.
+  * Ability to paste (most) terms into the shell.
+  * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
+  * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
+  * Editing can be done in-situ or in a text editor.
+  * Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
+  * Can be enabled and state shared globally, or on individual shell sessions.
 
-  IExHistory2 can be enabled in `~/.iex.exs` for example:
+  `IExHistory2` can be enabled in `~/.iex.exs` for example:
 
       Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
-      IExHistory2.initialize(history_limit: 200, scope: :local, show_date: true, colors: [index: :red])
+      IExHistory2.initialize()
 
-  The application can, of course, be added as a dependency to mix.exs
+  Alternatively the project can be added as a `Mix` dependancy.
 
-  ## Functions
+  ## Short-cut Functions
     
       iex> hl()                     - list the entire history.
       
@@ -59,7 +66,7 @@ defmodule IExHistory2 do
       
       iex> hi()                     - summary
 
-  NOTE: To use `he/1` the environment variable `EDITOR` must be set to point to the editor:
+  **NOTE:** To use `he/1` the environment variable `EDITOR` must be set to point to your editor:
   
       export EDITOR="vim"
 
@@ -74,8 +81,39 @@ defmodule IExHistory2 do
       iex> IExHistory2.clear_bindings()
           
   The functions `IExHistory2.add_binding/2` and `IExHistory2.get_binding/1` allows variables
-  to be set in a module that is invoked in the shell to be accessible in the shell.
+  to be set in a module that is invoked in the shell to be accessible in the shell and vice versa.
+      
+      defmodule VarTest do
+        
+        def get_me(val) do
+          if IExHistory2.get_binding(:path_to_use) == :path1 do
+            result = val + 100
+            IExHistory2.add_binding(:result_var, %{path: :path1, result: result})
+            result
+          else
+            result = val + 200
+            IExHistory2.add_binding(:result_var, %{path: :path2, result: result})
+            result
+          end
+        end
+        
+      end
           
+      iex> path_to_use = :path1
+      :path1
+      iex> VarTest.get_me(50)
+      150
+      iex> result_var
+      %{path: :path1, result: 150}
+      
+      iex> path_to_use = :path2
+      :path2
+      iex> VarTest.get_me(50)
+      250
+      iex> result_var
+      %{path: :path2, result: 250}
+
+   
   ## Navigation
           
   The application uses a different set of keys for navigation, and attempts to present multi-line 
@@ -91,13 +129,17 @@ defmodule IExHistory2 do
               
       ctrl^[    - reset navigation, returns to the prompt.
               
+  **NOTE:** To use `ctrl^e` the environment variable `EDITOR` must be set to your editor:
+
   ## Configuration
     
-    The following options can be set:
+  The following options can be set:
 
       [
         scope: :local,
         history_limit: :infinity,
+        paste_eval_regex: [],
+        import: true,
         hide_history_commands: true,
         prepend_identifiers: true,
         command_display_width: int,
@@ -105,7 +147,6 @@ defmodule IExHistory2 do
         key_buffer_history: true,
         paste_eval_regex: [],
         show_date: true,
-        
         save_bindings: true,
         colors: [
           index: :red,
@@ -115,66 +156,89 @@ defmodule IExHistory2 do
           variable: :green
         ]
       ]
+
+  To import short-cut functions set `import:` to true.
+  
+      import: true
+      
+  One current issue with the current shell is the inconsistent ability to paste large terms into
+  the shell. Terms such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
+  The application will attempt to recognize such terms during evaluation, wrap them in quotes and attempt
+  to re-evaluate. 
+  
+  Currently process ids, references, anonymous functions, ports and `#Ecto.Schema.Metadata` are 
+  supported by default. Additional terms can be added:
+  
+      paste_eval_regex: ["#SpecialItem1", "#NewObject"]
+          
+  This toggle true/false for calls to `IExHistory2.*` (and imports) from been saved.
         
-    `:hide_history_commands ` This will prevent all calls to `IExHistory2.*` from been saved.
+      hide_history_commands: true 
+      
+  If set to false, the default, commands that were evaluated incorrectly will not be saved.
+  
+      save_invalid_results: false 
 
-    `:save_invalid_results ` If set to false, the default, commands that were evaluated incorrectly will not be saved.
-
-    `:key_buffer_history ` If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
-    Unlike the standard up/down arrow history this is command based not line based. So pasting of a large term or source code will only require 1 up or down key.
+  If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
+      
+      key_buffer_history: true
+      
+  Unlike the standard up/down arrow history this is command based not line based. So pasting of a large term or source code will only require 1 up or down key.
     
-    This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 150 lines, although this can be changed by updating
-    `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
+  If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
-    `:prepend_identifiers ` If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
+      prepend_identifiers: true
+      
+  Example, enabled:
+   
+      iex> time = Time.utc_now().second
+      14
+      iex> new_time = hx(1)
+      22
 
-    For example:
+      iex> new_time
+      22                  # New time is assigned to variable time
+      iex> time
+      13                  # However, the original date variable is unchanged
 
-      enabled:
-          iex> time = Time.utc_now().second
-          14
-          iex> new_time = hx(1)
-          22
+      iex> hl()
+      1: 2021-09-01 17:13:13: time = Time.utc_now().second
+      2: 2021-09-01 17:13:22: new_time =  time = Time.utc_now().second    # We see the binding to new_time
 
-          iex> new_time
-          22                  # New time is assigned to variable time
-          iex> time
-          13                  # However, the original date variable is unchanged
+  Disabled:
+  
+      iex> time = Time.utc_now().second
+      43
+      iex> new_time = hx(1)
+      50
 
-          iex> hl()
-          1: 2021-09-01 17:13:13: time = Time.utc_now().second
-          2: 2021-09-01 17:13:22: new_time =  time = Time.utc_now().second    # We see the binding to new_time
+      iex> new_time       # New time is assigned to variable time
+      50
+      iex> time
+      50                  # However, this time the original time variable has also changed
 
-        disabled:
-          iex> time = Time.utc_now().second
-          43
-          iex> new_time = hx(1)
-          50
-
-          iex> new_time       # New time is assigned to variable time
-          50
-          iex> time
-          50                  # However, this time the original time variable has also changed
-
-          iex> hl()
-          1: 2021-09-01 17:17:43: time = Time.utc_now().second
-          2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
+      iex> hl()
+      1: 2021-09-01 17:17:43: time = Time.utc_now().second
+      2: 2021-09-01 17:17:50: time = Time.utc_now().second      # We do not see the binding to new_time
 
 
-    `scope` can be one of `:local, :global `or a `node name`
+  `scope:` can be one of `:local, :global `or a `node name`
 
-    If `scope` is `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
+  * `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
 
-    If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on that shell
+  * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell
 
-    If `scope` is `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
+  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
-    Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
+  If a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
 
       export ERL_AFLAGS="-kernel shell_history enabled"
 
       --erl "-kernel shell_history enabled"
 
+  ## Initialization
+  
+  To initialize 
   """
 
   @version "5.0"
@@ -214,26 +278,26 @@ defmodule IExHistory2 do
   @doc """
   Initializes the IExHistory2 app. Takes the following parameters:
 
-      [
-        scope: :local,
-        history_limit: :infinity,
-        hide_history_commands: true,
-        prepend_identifiers: true,
-        key_buffer_history: true,
-        command_display_width: :int,
-        save_invalid_results: false,
-        show_date: true,
-        import: true,
-        paste_eval_regex: [],
-        save_bindings: true,
-        colors: [
-          index: :red,
-          date: :green,
-          command: :yellow,
-          label: :red,
-          variable: :green
-        ]
+    [
+      scope: :local,
+      history_limit: :infinity,
+      hide_history_commands: true,
+      prepend_identifiers: true,
+      key_buffer_history: true,
+      command_display_width: :int,
+      save_invalid_results: false,
+      show_date: true,
+      import: true,
+      paste_eval_regex: [],
+      save_bindings: true,
+      colors: [
+        index: :red,
+        date: :green,
+        command: :yellow,
+        label: :red,
+        variable: :green
       ]
+    ]
 
   Alternatively a filename can be given that was saved with `IExHistory2.save_config()`
 
@@ -508,6 +572,7 @@ defmodule IExHistory2 do
       :path2
       iex> VarTest.get_me(50)
       250
+      
   The variable can be represented as an atom or string.      
   """
   @spec get_binding(atom() | String.t()) :: any()
@@ -563,7 +628,7 @@ defmodule IExHistory2 do
   @spec add_binding(atom() | String.t(), any()) :: :ok
   def add_binding(var, value) do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}")
-    :ok
+    value
   end
   
   @doc """
@@ -574,13 +639,13 @@ defmodule IExHistory2 do
   @spec add_binding(atom() | String.t(), any(), atom()) :: :ok
   def add_binding(var, value, name) do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
-    :ok
+    value
   end
 
   @doc false
   def add_binding(value) do
     inject_command("#{inspect(value, limit: :infinity, printable_limit: :infinity)}")
-    :ok
+    value
   end
   
   @doc """
