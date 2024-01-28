@@ -856,7 +856,11 @@ defmodule IExHistory2 do
     {:ok, [config]} = :file.consult(filename)
     config
   end
-
+  
+  defp do_load_config(app) when is_atom(app) do
+    Application.get_env(:collection_server, __MODULE__)
+  end
+  
   defp do_load_config(config), do: config
 
   defp init_save_config(config) do
