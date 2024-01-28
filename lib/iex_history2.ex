@@ -37,31 +37,31 @@ defmodule IExHistory2 do
 
   ## Functions
     
-      iex> hl()             - list the entire history.
+      iex> hl()                     - list the entire history.
       
-      iex> hl(val)          - list `val` entries from the start if val is positive, or from the end if negative.
+      iex> hl(val)                  - list `val` entries from the start if val is positive, or from the end if negative.
       
-      iex> hl(start, stop)  - list entries between `start` and `stop`.
+      iex> hl(start, stop)          - list entries between `start` and `stop`.
       
-      iex> hs(string)       - list entries that match all or part of the query string.
+      iex> hs(string)               - list entries that match all or part of the query string.
 
-      iex> hsi(string)      - case insensitive list entries that match all or part of the query string.
+      iex> hsi(string)              - case insensitive list entries that match all or part of the query string.
 
-      iex> hsa(string)      - closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
+      iex> hsa(string, dist \\ 80)  - closest match list of entries, e.g "acr.to_str" == "Macro.to_string"
       
-      iex> hx(pos)          - execute the expression at position `pos`.
+      iex> hx(pos)                  - execute the expression at position `pos`.
       
-      iex> hc(pos)          - copy the expression at position pos to the shell.
+      iex> hc(pos)                  - copy the expression at position pos to the shell.
       
-      iex> he(pos)          - edit the expression in a text editor.
+      iex> he(pos)                  - edit the expression in a text editor.
       
-      iex> hb()             - show the current bindings.
+      iex> hb()                     - show the current bindings.
       
-      iex> hi()             - summary
+      iex> hi()                     - summary
 
-  NOTE: To use `he/1` the environment variable `VISUAL` must be set to point to the editor:
+  NOTE: To use `he/1` the environment variable `EDITOR` must be set to point to the editor:
   
-      export VISUAL="vim"
+      export EDITOR="vim"
 
   ## Special Functions
 
@@ -85,9 +85,9 @@ defmodule IExHistory2 do
       
       ctrl^k    - move down through history.
       
-      ctrl^e    - allows the currently displayed item to be modified.
+      ctrl^y    - allows the currently displayed item to be modified.
       
-      ctrl^w    - opens the currently displayed item in an editor.
+      ctrl^e    - opens the currently displayed item in an editor.
               
       ctrl^[    - reset navigation, returns to the prompt.
               
@@ -103,7 +103,9 @@ defmodule IExHistory2 do
         command_display_width: int,
         save_invalid_results: false,
         key_buffer_history: true,
+        paste_eval_regex: [],
         show_date: true,
+        
         save_bindings: true,
         colors: [
           index: :red,
@@ -181,11 +183,17 @@ defmodule IExHistory2 do
 
   @shell_imports [hl: 0, hl: 1, hl: 2, hs: 1, hsi: 1, hsa: 1,
                   hsa: 2, hc: 1, hx: 1, hb: 0, hi: 0, he: 1]
-  @excluded_history_functions [".h(", ".x(", ".c("]
-  @excluded_history_imports ["hc(", "hl(", "hs(", "hsi(", "hsa(", "hx(", "hb(", "hi(", "he(",
-                             "hc ", "hl", "hs ", "hsi ", "hsa ", "hx ", "hb ", "hi ", "he "]
-  @exclude_from_history for f <- @excluded_history_functions, do: @module_name <> f
-
+  @exclude_from_history_imports ["hc(", "hl(", "hs(", "hsi(", "hsa(", "hx(", "hb(", "hi(", "he(",
+                                  "hc ", "hl", "hs ", "hsi ", "hsa ", "hx ", "hb ", "hi ", "he "]
+  @exclude_from_history_basic (for fun <- @exclude_from_history_imports do 
+                                    mod = Atom.to_string(__MODULE__) 
+                                          |> String.replace("Elixir.", "")
+                                    "#{mod}.#{fun}"
+                               end)     
+  @exclude_from_history_methods @exclude_from_history_imports ++ @exclude_from_history_basic
+  
+  @default_paste_eval_regex ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"]
+  
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green, binding: :cyan]
   @default_config [
@@ -196,6 +204,7 @@ defmodule IExHistory2 do
     show_date: true,
     save_bindings: true,
     command_display_width: @default_width,
+    paste_eval_regex: @default_paste_eval_regex,
     import: true,
     save_invalid_results: false,
     key_buffer_history: true,
@@ -203,7 +212,7 @@ defmodule IExHistory2 do
   ]
 
   @doc """
-    Initializes the IExHistory2 app. Takes the following parameters:
+  Initializes the IExHistory2 app. Takes the following parameters:
 
       [
         scope: :local,
@@ -215,6 +224,7 @@ defmodule IExHistory2 do
         save_invalid_results: false,
         show_date: true,
         import: true,
+        paste_eval_regex: [],
         save_bindings: true,
         colors: [
           index: :red,
@@ -225,9 +235,9 @@ defmodule IExHistory2 do
         ]
       ]
 
-    Alternatively a filename can be given that was saved with `IExHistory2.save_config()`
+  Alternatively a filename can be given that was saved with `IExHistory2.save_config()`
 
-    `scope` can be one of `:local, :global` or a `node()` name
+  `scope` can be one of `:local, :global` or a `node()` name
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
@@ -246,20 +256,6 @@ defmodule IExHistory2 do
       |> present_welcome()
     else
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
-    end
-  end
-
-  @doc false
-  def alias(name) when is_atom(name) do
-    if Process.get(:history_alias) == nil do
-      string_name = Atom.to_string(name) |> String.replace("Elixir.", "")
-      inject_command_all_servers("alias(#{__MODULE__}, as: #{string_name})")
-      excluded = for fun <- @excluded_history_functions, do: string_name <> fun
-      base_name = string_name <> "."
-      Process.put(:history_alias, base_name)
-      IExHistory2.Events.send_message({:module_alias, base_name})
-      ## TODO: Find a better way
-      :persistent_term.put(:history_aliases, excluded ++ :persistent_term.get(:history_aliases, []))
     end
   end
 
@@ -633,7 +629,7 @@ defmodule IExHistory2 do
   end
 
   @doc """
-    Allows the following options to be changed, but not saved:
+  Allows the following options to be changed, but not saved:
       :show_date
       :history_limit
       :hide_history_commands,
@@ -743,8 +739,7 @@ defmodule IExHistory2 do
 
   @doc false
   def exclude_from_history() do
-    aliases = :persistent_term.get(:history_aliases, [])
-    @exclude_from_history ++ @excluded_history_imports ++ aliases
+    @exclude_from_history_methods
   end
 
   @doc false
@@ -779,18 +774,6 @@ defmodule IExHistory2 do
   @doc false
   def inject_command(command, name \\ nil), do: IExHistory2.Bindings.inject_command(command, name)
 
-  defp inject_command_all_servers(command) do
-    Enum.each(
-      Process.list(),
-      fn pid ->
-        server = :group.whereis_shell()
-
-        if not is_nil(server),
-          do: send(pid, {:eval, server, command, 1, {"", :other}})
-      end
-    )
-  end
-
   defp query_search(fun) do
     try do
       fun.()
@@ -815,6 +798,7 @@ defmodule IExHistory2 do
     infinity_limit = IExHistory2.Events.infinity_limit()
     colors = Keyword.get(config, :colors, @default_colors)
     new_colors = Enum.map(@default_colors, fn {key, default} -> {key, Keyword.get(colors, key, default)} end)
+    custom_regex = Keyword.get(config, :paste_eval_regex, [])
     config = Keyword.delete(config, :colors)
 
     new_config =
@@ -823,9 +807,10 @@ defmodule IExHistory2 do
         fn
           {:colors, _} -> {:colors, Keyword.get(config, :colors, new_colors)}
           {:limit, current} when current > infinity_limit -> {:limit, Keyword.get(config, :limit, infinity_limit)}
+          {:paste_eval_regex, regex} -> compile_regex(regex ++ custom_regex)
           {key, default} -> {key, Keyword.get(config, key, default)}
         end
-      )
+      ) |> List.flatten()
             
     if Keyword.get(new_config, :scope, :local) == :global do
       newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
@@ -837,6 +822,11 @@ defmodule IExHistory2 do
     end
   end
 
+  defp compile_regex(regex) do
+    compiled = Enum.uniq(regex) |> Enum.map(&Regex.compile!("#{&1}<(.*)>"))  
+    [{:compiled_paste_eval_regex, compiled}, {:paste_eval_regex, regex}]
+  end
+  
   defp history_configured?(config) do
     scope = Keyword.get(config, :scope, :local)
 

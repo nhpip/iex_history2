@@ -33,16 +33,11 @@ defmodule IExHistory2.Events.Server do
 
   @history_up_key <<21>> # ctrl+u
   @history_down_key <<11>>  # ctrl+k
-  @editor_key <<23>> # ctrl+o
-  @modify_key <<05>> # ctrl+e
+  @editor_key <<05>> # ctrl+e
+  @modify_key <<25>> # ctrl+y
   @abandon_key <<27>> # ctrl+[
   @enter_key1 <<10>>
   @enter_key2 <<13>>
-  
-  @regex ["#Reference<(.*)>", "#PID<(.*)>", "#Function<(.*)>",
-          "#Ecto.Schema.Metadata<(.*)>", "#Port<(.*)>"]
-  
-  @compiled_regex for reg <- @regex, do: Regex.compile!(reg)
           
   use GenServer
 
@@ -179,12 +174,12 @@ defmodule IExHistory2.Events.Server do
     {:noreply, new_process_info}
   end
 
-  def handle_cast({:key_buffer_history, true}, %{key_buffer_history: false, beam_node: beam_node} = process_info) do
+  def handle_cast({:key_buffer_history, true}, %{key_buffer_history: false, shell_parent_node: shell_parent_node} = process_info) do
     new_process_info =
       Enum.reduce(process_info, process_info, fn
         {shell_pid, shell_config}, process_info when is_pid(shell_pid) ->
           activity_queue = create_activity_queue(shell_config, true)
-          activity_pid = keystroke_activity_monitor(beam_node)
+          activity_pid = keystroke_activity_monitor(shell_parent_node)
           Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
 
         _, process_info ->
@@ -238,7 +233,6 @@ defmodule IExHistory2.Events.Server do
   end
 
   def handle_info({:trace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
-   # command = tidy_term(command)
     case Map.get(process_info, shell_pid) do
       %{pending_command: pending_command} = shell_config ->
         {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: pending_command <> command}}}
@@ -259,11 +253,11 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :error, _}}, process_info) do
+  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :error, _}}, %{compiled_paste_eval_regex: regex} = process_info) do
     case Map.get(process_info, shell_pid) do
       %{pending_command: pending_command, server_pid: server_pid, re_evaluating: false} = shell_config when byte_size(pending_command) > 0 ->
         if String.contains?(pending_command, "#") do
-          send(shell_pid, {:eval, server_pid, tidy_term(pending_command), 1, {"", :other}})
+          send(shell_pid, {:eval, server_pid, make_term_pasteable(pending_command, regex), 1, {"", :other}})
           {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: true}}}
         else  
           {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
@@ -277,8 +271,8 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, process_info) do
-    data = tidy_term(data)
+  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{compiled_paste_eval_regex: regex} = process_info) do
+    data = make_term_pasteable(data, regex)
     Enum.find(
       process_info,
       fn
@@ -368,14 +362,14 @@ defmodule IExHistory2.Events.Server do
   end
 
   defp do_register_new_shell(
-         %{shell_pid: shell_pid, server_pid: server_pid, beam_node: beam_node} = shell_config,
+         %{shell_pid: shell_pid, server_pid: server_pid, shell_parent_node: shell_parent_node} = shell_config,
          %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info
        ) do
     if Map.get(process_info, shell_pid) == nil do
       store_count = IExHistory2.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
-      activity_pid = keystroke_activity_monitor(beam_node)
+      activity_pid = keystroke_activity_monitor(shell_parent_node)
       :erlang.trace(server_pid, true, [:send, :receive])
       activity_queue = create_activity_queue(shell_config, key_buffer_history)
       new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
@@ -642,12 +636,12 @@ defmodule IExHistory2.Events.Server do
     end
   end
   
-  def tidy_term(data) do
+  def make_term_pasteable(data, regex) do
     data = to_string(data)
     if String.contains?(data, "#") do
-      Enum.reduce(@compiled_regex, data, 
-                    fn regex, cmd -> 
-                        Regex.replace(regex, cmd, fn x -> "#{inspect(x)}" end)
+      Enum.reduce(regex, data, 
+                    fn reg, cmd -> 
+                        Regex.replace(reg, cmd, fn x -> "#{inspect(x)}" end)
                     end
       )
     else

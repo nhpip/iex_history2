@@ -30,13 +30,16 @@ defmodule IExHistory2.Bindings do
   @bindings_check_interval 2500
 
   @doc false
-  def initialize(:not_ok), do: :not_ok
+  def initialize(:not_ok),
+    do: :not_ok
 
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     save_bindings? = Keyword.get(config, :save_bindings, true)
-    if save_bindings?, do: IExHistory2.persistence_mode(scope) |> do_initialize()
+    if save_bindings? do 
+      IExHistory2.persistence_mode(scope) |> do_initialize()
+    end
     config
   end
 

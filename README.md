@@ -29,9 +29,9 @@ Alternatively the project can be added as a `Mix` dependancy.
 
     ctrl^[    - Reset navigation, returns to the prompt.
 ```
-NOTE: To use `ctrl^w` the environment variable VISUAL must be set to point to the editor:
+NOTE: To use `ctrl^w` the environment variable EDITOR must be set to point to the editor:
 ```
-    export VISUAL="vim"
+    export EDITOR="vim"
 ```
 
 ## Shortcut Search and Edit Functions
@@ -60,9 +60,9 @@ Key history navigation functions are automatically imported into the shell.
     iex> hi()             - Summary
 
 ```
-NOTE: To use `he/1` the environment variable VISUAL must be set to point to the editor:
+NOTE: To use `he/1` the environment variable EDITOR must be set to point to the editor:
 ```
-    export VISUAL="vim"
+    export EDITOR="vim"
 ```
 
 ### iex> hl()
@@ -152,9 +152,9 @@ the result is re-evaluated and returned to the shell.
     .....
     {:ok, :changes_made}    
 ```
-NOTE: To use `he/1` the environment variable VISUAL must be set to point to the editor:
+NOTE: To use `he/1` the environment variable EDITOR must be set to point to the editor:
 ```
-    export VISUAL="vim"
+    export EDITOR="vim"
 ```
 
 ### iex> hb()

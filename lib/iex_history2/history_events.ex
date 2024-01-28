@@ -30,6 +30,7 @@ defmodule IExHistory2.Events do
   @store_name "store_history_events"
   @random_string "adarwerwvwvevwwerxrwfx"
 
+  alias Agent.Server
   alias IExHistory2.Events.Server
 
   @doc false
@@ -38,7 +39,8 @@ defmodule IExHistory2.Events do
 
     if scope != :global do
       set_group_history(:disabled)
-      IExHistory2.persistence_mode(scope) |> do_initialize()
+      IExHistory2.persistence_mode(scope) 
+      |> do_initialize(config)
       config
     else
       set_group_history(:enabled)
@@ -50,7 +52,7 @@ defmodule IExHistory2.Events do
   def get_history() do
     IExHistory2.configuration(:scope, :local)
     |> do_get_history()
-    |> pp_history_items(1)
+    |> pretty_print_history_items(1)
   end
 
   @doc false
@@ -90,7 +92,7 @@ defmodule IExHistory2.Events do
   @doc false
   def get_history_item(i) do
     do_get_history_item(i)
-    |> pp_history_items(state(:number) + i)
+    |> pretty_print_history_items(state(:number) + i)
   end
 
   @doc false
@@ -98,7 +100,7 @@ defmodule IExHistory2.Events do
     real_start = if is_atom(start), do: 1, else: start
 
     do_get_history_range(start, stop)
-    |> pp_history_items(real_start)
+    |> pretty_print_history_items(real_start)
   end
 
   @doc false
@@ -189,7 +191,7 @@ defmodule IExHistory2.Events do
         Enum.map(
           server_state,
           fn
-            {_pid, %{beam_node: node, size: size}} when node == my_node ->
+            {_pid, %{shell_parent_node: node, size: size}} when node == my_node ->
               [node: node, size: size]
 
             _ ->
@@ -231,7 +233,9 @@ defmodule IExHistory2.Events do
   end
 
   @doc false
-  def infinity_limit(), do: @infinity_limit
+  def infinity_limit() do
+    @infinity_limit
+  end
 
   @doc false
   def send_message(message) do
@@ -249,14 +253,18 @@ defmodule IExHistory2.Events do
     |> Enum.reverse()
   end
 
-  defp do_initialize({:ok, true, scope, node}) do
+  defp do_initialize({:ok, true, scope, node}, config) do
     local_shell_state = create_local_shell_state(scope, node)
-    register_or_start_tracer_service(local_shell_state)
+    register_or_start_tracer_service(local_shell_state, config)
   end
 
-  defp do_initialize(_), do: :not_ok
+  defp do_initialize(_, _), do: :not_ok
 
-  defp do_get_history_item(i) when i >= 1, do: IExHistory2.configuration(:scope, :local) |> do_get_history() |> Enum.at(i - 1)
+  defp do_get_history_item(i) when i >= 1 do 
+    IExHistory2.configuration(:scope, :local) 
+    |> do_get_history()
+    |> Enum.at(i - 1)
+  end 
 
   defp do_get_history_item(i), do: do_get_history_range(state(:number) + i, :stop)
 
@@ -278,9 +286,11 @@ defmodule IExHistory2.Events do
     |> Enum.slice(start, quantity)
   end
 
-  defp do_get_history_range(_start, _stop), do: raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
+  defp do_get_history_range(_start, _stop) do
+    raise(%ArgumentError{message: "Values out of range, only #{state(:number)} entries exist"})
+  end
 
-  defp pp_history_items(items, start) do
+  defp pretty_print_history_items(items, start) do
     Enum.reduce(items, start, fn {date, command}, count ->
       display_formatted_date(count, date, command)
       count + 1
@@ -316,8 +326,10 @@ defmodule IExHistory2.Events do
   end
 
   @doc false
-  def color(what), do: IExHistory2.get_color_code(what)
-
+  def color(what) do
+    IExHistory2.get_color_code(what)
+  end 
+  
   defp set_group_history(state) do
     :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
   end
@@ -334,12 +346,12 @@ defmodule IExHistory2.Events do
   end
 
   defp history_item_may_contain?(command, match) do
-    String.myers_difference(command, match) 
-    |> Enum.filter(&(elem(&1, 0) == :eq))
-    |> Enum.map(fn {_, s} -> String.jaro_distance(s, match) end) 
-    |> then(fn([]) -> 0
+      String.myers_difference(command, match) 
+      |> Enum.filter(&(elem(&1, 0) == :eq))
+      |> Enum.map(fn {_, s} -> String.jaro_distance(s, match) end) 
+      |> then(fn([]) -> 0
            (prob) -> Enum.max(prob)
-       end)
+      end)
   end
   
   defp do_get_history(:global) do
@@ -373,9 +385,9 @@ defmodule IExHistory2.Events do
     Process.put(:history_events_store_name, store_name)
     server_pid = :group.whereis_shell()
     server_node = :erlang.node(server_pid)
-    beam_node = :erlang.node(:erlang.group_leader())
-    user_driver_group = :rpc.call(beam_node, :user_drv, :whereis_group, [])
-    user_driver = :rpc.call(beam_node, Process, :whereis, [:user_drv])
+    shell_parent_node = :erlang.node(:erlang.group_leader())
+    user_driver_group = :rpc.call(shell_parent_node, :user_drv, :whereis_group, [])
+    user_driver = :rpc.call(shell_parent_node, Process, :whereis, [:user_drv])
 
     %{
       store_name: store_name,
@@ -386,7 +398,7 @@ defmodule IExHistory2.Events do
       prepend_ids: nil,
       pending_command: "",
       node: server_node,
-      beam_node: beam_node,
+      shell_parent_node: shell_parent_node,
       user_driver: user_driver,
       port: :port,
       success_count: nil,
@@ -403,40 +415,25 @@ defmodule IExHistory2.Events do
     }
   end
 
-  defp register_or_start_tracer_service(local_shell_state) do
+  defp register_or_start_tracer_service(local_shell_state, config) do
     if Process.whereis(Server) == nil do
-      do_start_tracer_service()
+      do_start_tracer_service(config)
     end
 
     Server.register_new_shell(local_shell_state)
   end
 
-  defp do_start_tracer_service() do
-    scope = IExHistory2.configuration(:scope, :local)
-    hide_history_cmds = IExHistory2.configuration(:hide_history_commands, true)
-    prepend_ids? = IExHistory2.configuration(:prepend_identifiers, true)
-    save_invalid = IExHistory2.configuration(:save_invalid_results, true)
-    key_buffer_history = IExHistory2.configuration(:key_buffer_history, true)
-
+  defp do_start_tracer_service(config) do
     real_limit =
-      case IExHistory2.configuration(:history_limit, :infinity) do
+      case Keyword.get(config, :history_limit, :infinity) do
         :infinity -> @infinity_limit
         limit -> limit
       end
-
-    process_info_state =
-      %{
-        scope: scope,
-        hide_history_commands: hide_history_cmds,
-        store_count: 0,
-        limit: real_limit,
-        module_alias: nil,
-        prepend_identifiers: prepend_ids?,
-        save_invalid_results: save_invalid,
-        key_buffer_history: key_buffer_history
-      }
-
-    Server.start_link(process_info_state)
+    Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
+                          :save_invalid_results, :key_buffer_history, 
+                          :compiled_paste_eval_regex, :import]) 
+    |> Enum.into(%{store_count: 0, limit: real_limit})
+    |> Server.start_link()
   end
 
   defp unix_to_date(unix) do
