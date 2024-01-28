@@ -39,6 +39,11 @@ defmodule IExHistory2.Events.Server do
   @enter_key1 <<10>>
   @enter_key2 <<13>>
   
+  @regex ["#Reference<(.*)>", "#PID<(.*)>", "#Function<(.*)>",
+          "#Ecto.Schema.Metadata<(.*)>", "#Port<(.*)>"]
+  
+  @compiled_regex for reg <- @regex, do: Regex.compile!(reg)
+          
   use GenServer
 
   @doc false
@@ -233,8 +238,9 @@ defmodule IExHistory2.Events.Server do
   end
 
   def handle_info({:trace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
+   # command = tidy_term(command)
     case Map.get(process_info, shell_pid) do
-      %{pending_command: pending_command} = shell_config when is_map(shell_config) ->
+      %{pending_command: pending_command} = shell_config ->
         {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: pending_command <> command}}}
 
       _ ->
@@ -255,16 +261,24 @@ defmodule IExHistory2.Events.Server do
 
   def handle_info({:trace, _, :receive, {:evaled, shell_pid, :error, _}}, process_info) do
     case Map.get(process_info, shell_pid) do
+      %{pending_command: pending_command, server_pid: server_pid, re_evaluating: false} = shell_config when byte_size(pending_command) > 0 ->
+        if String.contains?(pending_command, "#") do
+          send(shell_pid, {:eval, server_pid, tidy_term(pending_command), 1, {"", :other}})
+          {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: true}}}
+        else  
+          {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
+        end
+        
       shell_config when is_map(shell_config) ->
-        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
-
+        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
+          
       _ ->
         {:noreply, process_info}
     end
   end
 
   def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, process_info) do
-    data = to_string(data)
+    data = tidy_term(data)
     Enum.find(
       process_info,
       fn
@@ -622,9 +636,22 @@ defmodule IExHistory2.Events.Server do
 
   defp do_validate_command(%{pending_command: command} = shell_config, process_info, shell_pid) do
     if command_valid?(command) do
-      {true, command, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+      {true, command, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
     else
-      {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: ""}}}
+      {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
+    end
+  end
+  
+  def tidy_term(data) do
+    data = to_string(data)
+    if String.contains?(data, "#") do
+      Enum.reduce(@compiled_regex, data, 
+                    fn regex, cmd -> 
+                        Regex.replace(regex, cmd, fn x -> "#{inspect(x)}" end)
+                    end
+      )
+    else
+      data
     end
   end
   

@@ -398,7 +398,8 @@ defmodule IExHistory2.Events do
       keystroke_monitor_pid: nil,
       last_scan_command: "",
       paste_buffer: "",
-      data_in_editor: ""
+      data_in_editor: "",
+      re_evaluating: false
     }
   end
 
