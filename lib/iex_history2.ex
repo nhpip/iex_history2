@@ -293,12 +293,12 @@ defmodule IExHistory2 do
   Add the configuration to your application `config/runtime.exs`. For example:
   
       config :iex_history2,
-        history_limit: 12345,
-        import: false,
+        history_limit: 1234,
+        import: true,
         scope: :local, 
         paste_eval_regex: ["#Extra"], 
         show_date: true, 
-        colors: [index: :red])
+        colors: [index: :red]
       
   When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
   
