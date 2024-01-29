@@ -70,6 +70,33 @@ defmodule IExHistory2 do
   
       export EDITOR="vim"
 
+  ### Examples
+ 
+  Simple listing of last 9 items:
+  
+      iex hl(-9)  
+      239: 2023-11-28 19:27:13: Ecto.Repo.Registry.lookup(CollectionServer.Server.Repo)
+      240: 2023-11-28 19:27:27: Ecto.Repo.Registry.lookup(CollectionServer.Server.Repo.ReadOnly1)
+      241: 2023-11-28 19:30:57: Ecto.Repo.Registry.all_running
+      242: 2023-11-28 20:55:22: DevHelper.port_stats(peer_port: 5432, statistics: :send_cnt)
+      243: 2023-11-28 20:55:34: Process.whereis(CSAdmin) |> :sys.get_status()
+      244: 2023-11-28 20:55:53: Process.get(self())
+      245: 2023-11-28 20:55:57: Process.get(CSAdmin)
+      246: 2023-11-29 14:49:21: CollectionServer.Server.Repo.all(q1)
+      247: 2023-11-29 17:48:21: %CollectionServer.FileSystem.Node{}
+
+  Partial match:
+  
+      iex> hsa("Prcess.")
+      7: 90% 2023-11-12 16:29:03: c = fn -> {dict, _} = Process.info(pid, :dictionary); dict[:request_user] end
+      8: 90% 2023-11-12 16:29:37: c = fn -> {dict, _} = Process.info(pid, :dictionary) end
+      20: 90% 2023-11-26 16:32:11: Process.get(:yyy)
+      21: 90% 2023-11-26 22:11:50: Process.info(pid(0,619,0))
+      208: 90% 2023-11-28 14:19:23: Process.whereis(CollectionServer.Server.ReadOnly1)
+      209: 90% 2023-11-28 14:19:34: Process.whereis(CollectionServer.Server.ReadOnly1) |> Process.info
+      210: 90% 2023-11-28 14:20:02: Process.whereis(CollectionServer.Server.ReadOnly1) |> Process.info() |> Keyword.get(:links)
+      211: 90% 2023-11-28 14:20:14: Process.whereis(CollectionServer.Server.Repo) |> Process.info() |> Keyword.get(:links)
+
   ## Special Functions
 
       iex> IExHistory2.add_binding(var, val)
