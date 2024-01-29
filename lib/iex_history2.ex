@@ -275,6 +275,8 @@ defmodule IExHistory2 do
 
   ## Initialization
   
+  ### Using `.iex.exs`
+  
   It is recommended to configure and start using `.iex.exs`, for  example:
   
       IExHistory2.initialize(history_limit: :infinity,
@@ -282,11 +284,33 @@ defmodule IExHistory2 do
                              paste_eval_regex: ["#Extra"], 
                              show_date: true, 
                              colors: [index: :red])
-    
-  If using `Mix` the application should be started manually in the shell. 
   
-      IExHistory2.initialize(:your_application_name)
+  ### As part of another application
+   
+  Add to `mix.exs` as a dependency: 
+  
+      {:iex_history2, "~> 5.2"}
+  
+  Or:
+  
+      {:iex_history2, github: "nhpip/iex_history2", tag: "5.2.0"},
+          
+  Add the configuration to your application `config/runtime.exs`. For example:
+  
+      config :iex_history2,
+        history_limit: 12345,
+        import: false,
+        scope: :local, 
+        paste_eval_regex: ["#Extra"], 
+        show_date: true, 
+        colors: [index: :red])
+      
+  When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
+  
+      IExHistory2.initialize()
 
+  **NOTE:** `:scope` of `:global` is not fully complete.
+  
   """
 
   @version "5.0"
