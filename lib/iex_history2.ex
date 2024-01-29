@@ -165,7 +165,6 @@ defmodule IExHistory2 do
       [
         scope: :local,
         history_limit: :infinity,
-        paste_eval_regex: [],
         import: true,
         hide_history_commands: true,
         prepend_identifiers: true,
@@ -354,6 +353,7 @@ defmodule IExHistory2 do
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
+             |> Keyword.put_new(:scope, IExHistory2.Events.get_scope(config_or_filename)) 
 
     if history_configured?(config) && not is_enabled?() do
       :dbg.stop()
@@ -371,7 +371,32 @@ defmodule IExHistory2 do
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
     end
   end
-
+  
+  @doc false
+  def start(_, _) do 
+    Application.get_all_env(:iex_history2)
+    |> IExHistory2.Supervisor.start_link()
+  end
+  
+  @doc false
+  def start_link(config) do
+    init_save_config(config)
+    |> Keyword.put(:running_mode, :supervisor)
+    |> IExHistory2.Events.initialize()
+    |> Keyword.get(:events_server_pid)
+  end
+  
+  @doc false
+  def child_spec(config) do
+    %{
+        id: Keyword.get(config, :id, __MODULE__),
+        start: {__MODULE__, :start_link, [config]},
+        type: Keyword.get(config, :type, :worker),
+        restart: :permanent,
+        shutdown: 5090
+    }
+  end
+  
   @doc """
   Displays the current configuration.
   """
