@@ -35,13 +35,8 @@ defmodule IExHistory2 do
   * Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
   * Can be enabled and state shared globally, or on individual shell sessions.
 
-  `IExHistory2` can be enabled in `~/.iex.exs` for example:
-
-      Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
-      IExHistory2.initialize(config)
-
-  Alternatively the project can be added as a `Mix` dependancy.
-
+  See section on `Initialization` and `Configuration` below.
+  
   ## Short-cut Functions
     
       iex> hl()                     - list the entire history.
