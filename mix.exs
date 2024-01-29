@@ -17,6 +17,7 @@ defmodule IExHistory2.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
+      mod: {IExHistory2, []},
       extra_applications: [:iex, :runtime_tools]
     ]
   end

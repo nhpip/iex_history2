@@ -165,7 +165,6 @@ defmodule IExHistory2 do
       [
         scope: :local,
         history_limit: :infinity,
-        paste_eval_regex: [],
         import: true,
         hide_history_commands: true,
         prepend_identifiers: true,
@@ -276,6 +275,8 @@ defmodule IExHistory2 do
 
   ## Initialization
   
+  ### Using `.iex.exs`
+  
   It is recommended to configure and start using `.iex.exs`, for  example:
   
       IExHistory2.initialize(history_limit: :infinity,
@@ -283,11 +284,33 @@ defmodule IExHistory2 do
                              paste_eval_regex: ["#Extra"], 
                              show_date: true, 
                              colors: [index: :red])
-    
-  If using `Mix` the application should be started manually in the shell. 
   
-      IExHistory2.initialize(:your_application_name)
+  ### As part of another application
+   
+  Add to `mix.exs` as a dependency: 
+  
+      {:iex_history2, "~> 5.2"}
+  
+  Or:
+  
+      {:iex_history2, github: "nhpip/iex_history2", tag: "5.2.0"},
+          
+  Add the configuration to your application `config/runtime.exs`. For example:
+  
+      config :iex_history2,
+        history_limit: 12345,
+        import: false,
+        scope: :local, 
+        paste_eval_regex: ["#Extra"], 
+        show_date: true, 
+        colors: [index: :red])
+      
+  When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
+  
+      IExHistory2.initialize()
 
+  **NOTE:** `:scope` of `:global` is not fully complete.
+  
   """
 
   @version "5.0"
@@ -354,6 +377,7 @@ defmodule IExHistory2 do
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
+             |> Keyword.put_new(:scope, IExHistory2.Events.get_scope(config_or_filename)) 
 
     if history_configured?(config) && not is_enabled?() do
       :dbg.stop()
@@ -371,7 +395,32 @@ defmodule IExHistory2 do
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
     end
   end
-
+  
+  @doc false
+  def start(_, _) do 
+    Application.get_all_env(:iex_history2)
+    |> IExHistory2.Supervisor.start_link()
+  end
+  
+  @doc false
+  def start_link(config) do
+    init_save_config(config)
+    |> Keyword.put(:running_mode, :supervisor)
+    |> IExHistory2.Events.initialize()
+    |> Keyword.get(:events_server_pid)
+  end
+  
+  @doc false
+  def child_spec(config) do
+    %{
+        id: Keyword.get(config, :id, __MODULE__),
+        start: {__MODULE__, :start_link, [config]},
+        type: Keyword.get(config, :type, :worker),
+        restart: :permanent,
+        shutdown: 5090
+    }
+  end
+  
   @doc """
   Displays the current configuration.
   """

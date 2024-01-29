@@ -36,15 +36,23 @@ defmodule IExHistory2.Events do
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
-
-    if scope != :global do
-      set_group_history(:disabled)
-      IExHistory2.persistence_mode(scope) 
-      |> do_initialize(config)
-      config
-    else
-      set_group_history(:enabled)
-      config
+    
+    cond do
+      scope != :global ->
+        set_group_history(:disabled)
+        res = IExHistory2.persistence_mode(scope) 
+              |> do_initialize(config)
+        Keyword.put(config, :events_server_pid, res)
+        
+      scope == :global && get_running_mode(config) == :supervisor ->  
+        set_group_history(:enabled)
+        res = IExHistory2.persistence_mode(scope) 
+              |> do_initialize(config)
+        Keyword.put(config, :events_server_pid, res)
+        
+      true ->    
+        set_group_history(:enabled)
+        config
     end
   end
 
@@ -225,6 +233,16 @@ defmodule IExHistory2.Events do
   end
 
   @doc false
+  def get_running_mode(config) do
+    get_running_mode_or_scope(config, :running_mode)
+  end
+    
+  @doc false
+  def get_scope(config) do
+    get_running_mode_or_scope(config, :scope)
+  end
+    
+  @doc false
   def does_current_scope_match?(new_scope) do
     case Server.get_state() do
       %{scope: scope} -> scope == new_scope
@@ -254,10 +272,14 @@ defmodule IExHistory2.Events do
   end
 
   defp do_initialize({:ok, true, scope, node}, config) do
-    local_shell_state = create_local_shell_state(scope, node)
-    register_or_start_tracer_service(local_shell_state, config)
+    if Keyword.get(config, :running_mode, :normal) == :supervisor do
+      register_or_start_tracer_service(%{}, config)
+    else
+      local_shell_state = create_local_shell_state(scope, node)
+      register_or_start_tracer_service(local_shell_state, config)
+    end
   end
-
+  
   defp do_initialize(_, _), do: :not_ok
 
   defp do_get_history_item(i) when i >= 1 do 
@@ -416,11 +438,16 @@ defmodule IExHistory2.Events do
   end
 
   defp register_or_start_tracer_service(local_shell_state, config) do
-    if Process.whereis(Server) == nil do
-      do_start_tracer_service(config)
+    if Keyword.get(config, :running_mode, :normal) == :supervisor do
+      if Process.whereis(Server) == nil do
+        do_start_tracer_service(config)
+      end   
+    else  
+      if Process.whereis(Server) == nil do
+        do_start_tracer_service(config)
+      end
+      Server.register_new_shell(local_shell_state)
     end
-
-    Server.register_new_shell(local_shell_state)
   end
 
   defp do_start_tracer_service(config) do
@@ -428,12 +455,12 @@ defmodule IExHistory2.Events do
       case Keyword.get(config, :history_limit, :infinity) do
         :infinity -> @infinity_limit
         limit -> limit
-      end
-    Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
-                          :save_invalid_results, :key_buffer_history, 
-                          :compiled_paste_eval_regex, :import]) 
-    |> Enum.into(%{store_count: 0, limit: real_limit})
-    |> Server.start_link()
+      end  
+     Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
+                           :save_invalid_results, :key_buffer_history, 
+                           :compiled_paste_eval_regex, :running_mode, :import]) 
+     |> Enum.into(%{store_count: 0, limit: real_limit})
+     |> Server.start_link()
   end
 
   defp unix_to_date(unix) do
@@ -441,4 +468,16 @@ defmodule IExHistory2.Events do
     |> DateTime.to_string()
     |> String.replace("Z", "")
   end
+  
+  defp get_running_mode_or_scope(config, what) do
+    Process.whereis(IExHistory2.Events.Server)
+    |> then(
+        fn(pid) when is_pid(pid) ->
+          :sys.get_state(pid)
+          |> Map.get(what, :undefined)
+        (_) -> 
+          Keyword.get(config, what)
+    end)  
+  end
+  
 end

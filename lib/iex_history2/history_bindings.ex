@@ -38,7 +38,8 @@ defmodule IExHistory2.Bindings do
     scope = Keyword.get(config, :scope, :local)
     save_bindings? = Keyword.get(config, :save_bindings, true)
     if save_bindings? do 
-      IExHistory2.persistence_mode(scope) |> do_initialize()
+      IExHistory2.persistence_mode(scope) 
+      |> do_initialize()
     end
     config
   end
