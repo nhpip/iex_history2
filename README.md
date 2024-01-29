@@ -10,12 +10,7 @@ Improved shell history with variable binding persistance.
 * Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
 * Can be enabled and state shared globally, or on individual shell sessions.
 
-`IExHistory2` can be enabled in `~/.iex.exs` for example:
-
-    Code.append_path("~/github/iex_history2/_build/dev/lib/iex_history2/ebin")
-    IExHistory2.initialize()
-
-Alternatively the project can be added as a `Mix` dependancy.
+See section on `Configuration` and `Initialization` to get started.
 
 ## Navigation Keys
 
@@ -361,8 +356,48 @@ If `scope` is `node()` (e.g. `:mgr@localhost`) history will only be active on th
 If `scope` is `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
 Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
+
 ```
     export ERL_AFLAGS="-kernel shell_history enabled"
 
     --erl "-kernel shell_history enabled"
 ```
+
+## Initialization
+  
+### Using `.iex.exs`
+  
+It is recommended to configure and start using `.iex.exs`, for  example:
+```
+      IExHistory2.initialize(history_limit: :infinity,
+                             scope: :local, 
+                             paste_eval_regex: ["#Extra"], 
+                             show_date: true, 
+                             colors: [index: :red])
+```  
+### As part of another application
+   
+Add to `mix.exs` as a dependency: 
+```  
+      {:iex_history2, "~> 5.2"}
+```  
+Or:
+```  
+      {:iex_history2, github: "nhpip/iex_history2", tag: "5.2.0"},
+```          
+Add the configuration to your application `config/runtime.exs`. For example:
+```  
+      config :iex_history2,
+        history_limit: 12345,
+        import: false,
+        scope: :local, 
+        paste_eval_regex: ["#Extra"], 
+        show_date: true, 
+        colors: [index: :red])
+```      
+When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
+```  
+      IExHistory2.initialize()
+```
+**NOTE:** `:scope` of `:global` is not fully complete.
+  
