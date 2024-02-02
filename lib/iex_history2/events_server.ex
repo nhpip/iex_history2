@@ -30,17 +30,20 @@ defmodule IExHistory2.Events.Server do
 
   @history_buffer_size 150
   @save_immediate_buffer_duplicates false
-
-  @history_up_key <<21>> # ctrl+u
-  @history_down_key <<11>>  # ctrl+k
-  @editor_key <<05>> # ctrl+e
-  @modify_key <<25>> # ctrl+y
-  @abandon_key <<27>> # ctrl+[
-  @enter_key1 <<10>>
-  @enter_key2 <<13>>
+  @codepoints String.codepoints("abcdefghijklmnopqrstuvwxyz")
           
-  use GenServer
+  @trace_pattern [{{:_, :_, {:_, {:"$1", :_}}}, [{:orelse, {:==, :"$1", :data}, {:==, :"$1", :editor_data}}], []}]
+  @non_alphanumeric Regex.compile!("^[a-zA-Z0-9]+$")
+  @start_regex Regex.compile!("defmodule IExHistory2.Random(.*)XX do")
 
+  use GenServer
+  alias IExHistory2.Bindings
+
+    @doc false
+  def iex_parse(expr) do
+    GenServer.call(__MODULE__, {:iex_parse, expr})
+  end
+    
   @doc false
   def register_new_shell(shell_config) do
     GenServer.cast(__MODULE__, {:register_new_shell, shell_config})
@@ -51,6 +54,24 @@ defmodule IExHistory2.Events.Server do
     GenServer.cast(__MODULE__, {:command_item, self(), command})
   end
 
+  @doc false
+  def save_expression("") do
+    :ok
+  end
+  
+  def save_expression(expression) when is_bitstring(expression) do
+    GenServer.cast(__MODULE__, {:save_expression, self(), expression})
+  end
+  
+  def save_expression(expression) do
+    GenServer.cast(__MODULE__, {:save_expression, self(), to_string(expression)})
+  end
+  
+  @doc false
+  def enable() do
+    GenServer.call(__MODULE__, {:enable, self()})
+  end
+  
   @doc false
   def paste_command(command) do
     GenServer.cast(__MODULE__, {:paste_command, self(), command})
@@ -88,6 +109,11 @@ defmodule IExHistory2.Events.Server do
     GenServer.cast(__MODULE__, message)
   end
 
+   #@doc false
+  def shell_action(action) do
+    GenServer.cast(__MODULE__, {:shell, action, self()})
+  end
+  
   @doc false
   def start_link(process_info) do
     GenServer.start_link(__MODULE__, [process_info], name: __MODULE__)
@@ -99,6 +125,10 @@ defmodule IExHistory2.Events.Server do
     {:ok, process_info}
   end
 
+  def handle_call({:iex_parse, expr}, _from, %{compiled_paste_eval_regex: regex} = process_info) do
+    {:reply, make_term_pasteable(expr, regex), process_info}
+  end 
+  
   def handle_call({:clear, shell_pid}, _from, process_info) do
     case Map.get(process_info, shell_pid) do
       %{store_name: store_name} = shell_info ->
@@ -128,7 +158,6 @@ defmodule IExHistory2.Events.Server do
           :ok
       end
     )
-
     {:stop, :normal, :ok_done, process_info}
   end
 
@@ -149,6 +178,11 @@ defmodule IExHistory2.Events.Server do
     {:reply, new_process_info, process_info}
   end
 
+  def handle_call({:enable, _shell_pid} = msg, _from, process_info) do
+    Process.send_after(self(), msg, 2000)
+    {:reply, :ok, process_info}
+  end
+  
   def handle_call(_msg, _from, process_info) do
     {:reply, :ok, process_info}
   end
@@ -174,12 +208,24 @@ defmodule IExHistory2.Events.Server do
     {:noreply, new_process_info}
   end
 
-  def handle_cast({:key_buffer_history, true}, %{key_buffer_history: false, shell_parent_node: shell_parent_node} = process_info) do
+  def handle_cast({:save_expression, shell_pid, expression}, process_info) do
+    case Map.get(process_info, shell_pid) do
+      %{enabled: true} ->
+        new_process_info = strip_module_less_fun(expression)
+                           |> save_traced_command(shell_pid, process_info)
+        {:noreply, new_process_info}
+      
+      _ ->
+        {:noreply, process_info}
+    end    
+  end
+  
+  def handle_cast({:key_buffer_history, true}, %{key_buffer_history: false, shell_parent_node: shell_parent_node, navigation_keys: navigation} = process_info) do
     new_process_info =
       Enum.reduce(process_info, process_info, fn
         {shell_pid, shell_config}, process_info when is_pid(shell_pid) ->
           activity_queue = create_activity_queue(shell_config, true)
-          activity_pid = keystroke_activity_monitor(shell_parent_node)
+          activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)
           Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
 
         _, process_info ->
@@ -228,11 +274,32 @@ defmodule IExHistory2.Events.Server do
     {:noreply, new_process_info}
   end
 
+  def handle_cast({:shell, action, shell_pid}, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_info when is_map(shell_info) ->
+        send_to_shell(shell_info, :shell, action)
+        {:noreply, process_info}
+
+      _ ->
+        {:noreply, process_info}
+    end
+  end
+  
   def handle_cast(_msg, process_info) do
     {:noreply, process_info}
   end
 
-  def handle_info({:trace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
+  def handle_info({:enable, shell_pid}, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_info when is_map(shell_info) ->
+        {:noreply, %{process_info | shell_pid => %{shell_info | enabled: true}}}
+
+      _ ->
+        {:noreply, process_info}
+    end
+  end
+  
+  def handle_info({:xtrace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
     case Map.get(process_info, shell_pid) do
       %{pending_command: pending_command} = shell_config ->
         {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: pending_command <> command}}}
@@ -242,7 +309,7 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :ok, _}}, process_info) do
+  def handle_info({:xtrace, _, :receive, {:evaled, shell_pid, :ok, _}}, process_info) do
     case validate_command(process_info, shell_pid) do
       {true, new_command, new_process_info} ->
         new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
@@ -253,15 +320,11 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, _, :receive, {:evaled, shell_pid, :error, _}}, %{compiled_paste_eval_regex: regex} = process_info) do
+  def handle_info({:xtrace, _, :receive, {:evaled, shell_pid, :error, _}}, %{compiled_paste_eval_regex: regex} = process_info) do
     case Map.get(process_info, shell_pid) do
       %{pending_command: pending_command, server_pid: server_pid, re_evaluating: false} = shell_config when byte_size(pending_command) > 0 ->
-        if String.contains?(pending_command, "#") do
           send(shell_pid, {:eval, server_pid, make_term_pasteable(pending_command, regex), 1, {"", :other}})
           {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: true}}}
-        else  
-          {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
-        end
         
       shell_config when is_map(shell_config) ->
         {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
@@ -271,7 +334,8 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{compiled_paste_eval_regex: regex} = process_info) do
+  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{eval_mode: eval_mode, compiled_paste_eval_regex: regex} = process_info) do
+    manage_tracing(server_pid, false, eval_mode, :editor)
     data = make_term_pasteable(data, regex)
     Enum.find(
       process_info,
@@ -282,13 +346,15 @@ defmodule IExHistory2.Events.Server do
     )
     |> case do
       {_, %{data_in_editor: ^data, shell_pid: shell_pid} = shell_config} ->
-        send(shell_pid, {:eval, server_pid, "{:ok, :no_changes_made}", 1, {"", :other}})
+        send(shell_pid, {:history2, {:ok, :changes_made}})
+        send(shell_pid, {:eval, server_pid, "iex_history2_no_evaluation", 1, {"", :other}})
         {:noreply, %{process_info | shell_pid => %{shell_config | data_in_editor: ""}}}
         
       {_, %{server_pid: server_pid, shell_pid: shell_pid}} ->
         new_process_info = save_traced_command(data, shell_pid, process_info)
         send(shell_pid, {:eval, server_pid, data, 1, {"", :other}})
-        send(shell_pid, {:eval, server_pid, "{:ok, :changes_made}", 1, {"", :other}})
+        send(shell_pid, {:history2, {:ok, :changes_made}})
+        send(shell_pid, {:eval, server_pid, "iex_history2_no_evaluation", 1, {"", :other}})
         {:noreply, new_process_info}
 
       _ ->
@@ -363,14 +429,15 @@ defmodule IExHistory2.Events.Server do
 
   defp do_register_new_shell(
          %{shell_pid: shell_pid, server_pid: server_pid, shell_parent_node: shell_parent_node} = shell_config,
-         %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count} = process_info
+         %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count, navigation_keys: navigation, eval_mode: eval_mode} = process_info
        ) do
     if Map.get(process_info, shell_pid) == nil do
       store_count = IExHistory2.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
-      activity_pid = keystroke_activity_monitor(shell_parent_node)
-      :erlang.trace(server_pid, true, [:send, :receive])
+      activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)
+      manage_tracing(server_pid, true, eval_mode, :server)
+      :erlang.trace_pattern(:receive, @trace_pattern, [])
       activity_queue = create_activity_queue(shell_config, key_buffer_history)
       new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
       new_process_info = Map.put(new_process_info, shell_config.node, shell_pid)
@@ -380,7 +447,7 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  defp keystroke_activity_monitor(remote_node) do
+  defp keystroke_activity_monitor(remote_node, navigation) do
     dest = self()
     {mod, bin, _file} = :code.get_object_code(__MODULE__)
     :rpc.call(remote_node, :code, :load_binary, [mod, :nofile, bin])
@@ -389,43 +456,44 @@ defmodule IExHistory2.Events.Server do
       remote_node,
       fn ->
         :erlang.trace(Process.whereis(:user_drv), true, [:send, :receive])
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, navigation)
       end
     )
   end
 
-  defp do_keystroke_activity_monitor(dest) do
+  defp do_keystroke_activity_monitor(dest, %{up: up, 
+                                             down: down,
+                                             enter: enter, 
+                                             editor: editor,
+                                             modify: modify,
+                                             abandon: abandon} = keys) do
     receive do
-      {_, pid, :receive, {_, {:data, @history_up_key}}} ->
+      {_, pid, :receive, {_, {:data, ^up}}} ->
         send(dest, {:up_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
 
-      {_, pid, :receive, {_, {:data, @history_down_key}}} ->
+      {_, pid, :receive, {_, {:data, ^down}}} ->
         send(dest, {:down_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
 
-      {_, pid, :receive, {_, {:data, @editor_key}}} ->
+      {_, pid, :receive, {_, {:data, ^editor}}} ->
         send(dest, {:editor_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
 
-      {_, pid, :receive, {_, {:data, @modify_key}}} ->
+      {_, pid, :receive, {_, {:data, ^modify}}} ->
         send(dest, {:modify_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
                 
-      {_, pid, :receive, {_, {:data, @abandon_key}}} ->
+      {_, pid, :receive, {_, {:data, ^abandon}}} ->
         send(dest, {:abandon_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
                 
-      {_, pid, :receive, {_, {:data, @enter_key1}}} ->
+      {_, pid, :receive, {_, {:data, ^enter}}} ->
         send(dest, {:enter_key, pid})
-        do_keystroke_activity_monitor(dest)
-                
-      {_, pid, :receive, {_, {:data, @enter_key2}}} ->
-        send(dest, {:enter_key, pid})
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
         
       _ ->
-        do_keystroke_activity_monitor(dest)
+        do_keystroke_activity_monitor(dest, keys)
     end
   end
 
@@ -464,12 +532,19 @@ defmodule IExHistory2.Events.Server do
        {:requests, [{:move_rel, -String.length(last_command)}, :new_prompt, :delete_after_cursor, {:insert_chars_over, :unicode, command}]}}
     )
   end
-
+ 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command, :clear_line) do
-     #send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_line, :redraw_prompt]}})
-     send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_line]}})
+     send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)+100}, :delete_line, :redraw_prompt]}})
   end
 
+  defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :shell, action) do
+    send(user_driver, {user_driver_group, {:requests, action}})
+  end
+
+  defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :restore_line) do
+    send(user_driver, {user_driver_group, {:requests, [:redraw_prompt]}})
+  end
+  
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :move_line_up) do
     send(user_driver, {user_driver_group, {:requests, [{:move_line, -1}]}})
   end
@@ -529,15 +604,24 @@ defmodule IExHistory2.Events.Server do
     process_info
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command, paste_buffer: ""} = shell_config, 
+                                       %{eval_mode: eval_mode} = process_info, :editor) do
+    manage_tracing(server_pid, true, eval_mode, :editor)  
     send_to_shell(shell_config, "", :scan_action)
-    send_to_shell(shell_config, command, :open_editor)
+
+    if possible_variable?(command),
+      do: send_to_shell(shell_config, Bindings.get_binding_as_string(command, shell_pid), :open_editor),
+      else: send_to_shell(shell_config, command, :open_editor)
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none, data_in_editor: command}}
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, paste_buffer: command} = shell_config, process_info, :editor) do
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, paste_buffer: command} = shell_config, 
+                                       %{eval_mode: eval_mode} = process_info, :editor) do
+    manage_tracing(server_pid, true, eval_mode, :editor)  
     send_to_shell(shell_config, "", :scan_action)
-    send_to_shell(shell_config, command, :open_editor)
+    if possible_variable?(command), 
+      do: send_to_shell(shell_config, Bindings.get_binding_as_string(command, shell_pid), :open_editor),
+      else: send_to_shell(shell_config, command, :open_editor)
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, paste_buffer: "", last_direction: :none, data_in_editor: command}}
   end
 
@@ -598,6 +682,11 @@ defmodule IExHistory2.Events.Server do
   defp get_search_position(0, _size, _, :down), do: 0
   defp get_search_position(current_value, _size, _, :down), do: current_value - 1
 
+  defp possible_variable?(data) do
+    str = String.trim_trailing(data) |> String.trim_leading()
+    Regex.match?(@non_alphanumeric, str) 
+  end
+    
   defp queue_insert(command, {_, []}), do: do_queue_insert(command, [])
 
   defp queue_insert(command, {_, queue}) do
@@ -636,16 +725,85 @@ defmodule IExHistory2.Events.Server do
     end
   end
   
-  def make_term_pasteable(data, regex) do
+  defp manage_tracing(server_pid, mode, :shell, :editor) do
+    :erlang.trace(server_pid, mode, [:receive])
+  end
+  
+  defp manage_tracing(server_pid, mode, :server, :global) do
+    :erlang.trace(server_pid, mode, [:receive])
+  end
+  
+  defp manage_tracing(_server_pid, _mode, _, _) do
+    0
+  end
+  
+  defp make_term_pasteable(data, regex) do
+    to_string(data)
+    |> replace_special_terms(regex)
+    |> handle_solo_functions()
+  end
+  
+  def pre_process_term(data) do
     data = to_string(data)
-    if String.contains?(data, "#") do
-      Enum.reduce(regex, data, 
-            fn reg, cmd -> 
-                Regex.replace(reg, cmd, fn x -> "#{inspect(x)}" end)
-      end)
+    m = Regex.compile!("<(.*)\">")
+    Regex.scan(m, data)
+    |> Enum.reduce(data, fn ([mat, rep], term) -> String.replace(term, mat, "<#{String.to_atom(String.replace(rep, "\"", ":"))}>") end)
+  end
+    
+  defp replace_special_terms(data, %{match: match, no_match: no_match}) do
+    if term_needs_fixing?(data,match) do
+      regexes = Enum.zip(match, no_match)
+      String.split(data, "\n")
+      |> Enum.map(fn line ->
+            Enum.reduce(regexes, line, 
+              fn {match_regex, no_match_regex}, acc ->
+                repair_line(acc, match_regex, no_match_regex)
+            end)
+      end) 
+      |> Enum.join("\n")
+    else
+      data   
+    end  
+  end
+  
+  defp handle_solo_functions(data) do
+    if String.starts_with?(String.trim_leading(data), "def ") && not String.contains?(data, "defmodule") do
+      module = random_module()  
+      "defmodule #{module} do\n #{data}\n end\nimport #{module}\n:ok"
     else
       data
-    end
+    end    
+  end  
+    
+  defp repair_line(line, match_regex, no_match_regex) do
+    if term_needs_fixing?(line, match_regex) && not term_needs_fixing?(line, no_match_regex),
+      do: Regex.replace(match_regex, line, fn x -> "#{inspect(x)}" end),
+      else: line
+  end
+    
+  defp term_needs_fixing?(data, matches) when is_list(matches) do
+     Enum.any?(matches, &String.match?(data, &1)) 
+  end
+  
+  defp term_needs_fixing?(data, match) do
+    String.match?(data, match) 
+ end
+ 
+  defp strip_module_less_fun(data) do
+    if String.contains?(data, "IExHistory2.Random") do
+      String.replace(data, @start_regex, "")
+      |> String.split("end\nend\n\nimport")
+      |> List.first()
+      |> Kernel.<>("end")
+    else
+      data
+    end  
+  end 
+    
+  defp random_module() do
+    rand = Enum.map(1..5, fn _ -> Enum.random(@codepoints) end) 
+          |> Enum.join
+    "IExHistory2.Random#{rand}XXX"
   end
   
   defp command_valid?(command) do

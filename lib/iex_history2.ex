@@ -308,7 +308,7 @@ defmodule IExHistory2 do
   
   """
 
-  @version "5.0"
+  @version "5.3"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".hx", "Elixir.")
 
@@ -325,6 +325,23 @@ defmodule IExHistory2 do
   
   @default_paste_eval_regex ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"]
   
+  @history_up_key 21 # ctrl+u
+  @history_down_key 11  # ctrl+k
+  @editor_key 05 # ctrl+e
+  @modify_key 08 # ctrl+h
+  @abandon_key 27 # ctrl+[ or esc(ape)
+  @enter_key 13
+  
+  @alive_prompt "%prefix(%node)%counter>"
+  @default_prompt "%prefix(%counter)>"
+  
+  @default_navigation_keys %{up: @history_up_key,
+                             down: @history_down_key,
+                             editor: @editor_key,
+                             modify: @modify_key,
+                             abandon: @abandon_key,
+                             enter: @enter_key}
+  
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green, binding: :cyan]
   @default_config [
@@ -336,12 +353,16 @@ defmodule IExHistory2 do
     save_bindings: true,
     command_display_width: @default_width,
     paste_eval_regex: @default_paste_eval_regex,
+    navigation_keys: @default_navigation_keys,
     import: true,
+    eval_mode: :shell,
     save_invalid_results: false,
     key_buffer_history: true,
     colors: @default_colors
   ]
 
+  alias IExHistory2.Events.Server
+  
   @doc """
   Initializes the IExHistory2 app. Takes the following parameters:
 
@@ -356,7 +377,9 @@ defmodule IExHistory2 do
       show_date: true,
       import: true,
       paste_eval_regex: [],
+      navigation_keys: %{up: 21, down: 11}
       save_bindings: true,
+      eval_mode: :shell,
       colors: [
         index: :red,
         date: :green,
@@ -386,6 +409,8 @@ defmodule IExHistory2 do
       |> IExHistory2.Bindings.initialize()
       |> set_enabled()
       |> present_welcome()
+      |> Enum.into(%{})
+      |> finalize_startup() 
     else
       if is_enabled?(), do: :history_already_enabled, else: :history_disabled
     end
@@ -402,7 +427,7 @@ defmodule IExHistory2 do
     init_save_config(config)
     |> Keyword.put(:running_mode, :supervisor)
     |> IExHistory2.Events.initialize()
-    |> Keyword.get(:events_server_pid)
+    |> Map.get(:events_server_pid)
   end
   
   @doc false
@@ -412,8 +437,65 @@ defmodule IExHistory2 do
         start: {__MODULE__, :start_link, [config]},
         type: Keyword.get(config, :type, :worker),
         restart: :permanent,
-        shutdown: 5090
+        shutdown: 5000
     }
+  end
+    
+  @doc false
+  def iex_parse("iex_history2_no_evaluation", _opts, buffer) do
+    receive do
+      {:history2, m} -> {:ok, m, buffer}
+    after 
+      0 -> {:ok, nil, buffer}
+    end 
+  end
+    
+  def iex_parse(expr, opts, buffer) do
+    if String.contains?(expr, "#iex:break") do
+      set_prompts(:normal)
+      raise("break")
+    end   
+    bin = case buffer do 
+          {s, _} -> s; 
+          s -> s 
+        end
+    try do 
+       case IEx.Evaluator.parse(expr, opts, buffer) do
+        {:ok, {:def, _, _} = ast, _rsp} ->
+          set_prompts(:normal)
+          Server.iex_parse(Macro.to_string(ast))
+          |> iex_parse(opts, "")
+          
+        {:ok, ast, rsp} ->
+          Process.delete(:iex_history2_start)
+          set_prompts(:normal)
+          Server.save_expression(Macro.to_string(ast))
+          {:ok, ast, rsp}
+                    
+        {:incomplete, rsp} -> 
+          start_time = Process.get(:iex_history2_start, System.monotonic_time())
+          if System.convert_time_unit(System.monotonic_time() - start_time, :native, :millisecond) > 1000 do
+            set_prompts(:incomplete)
+            {:incomplete, rsp}
+          else   
+            Process.put(:iex_history2_start, System.monotonic_time())
+            set_prompts(:paste)
+            {:incomplete, rsp}
+          end
+      end  
+    rescue
+      e -> 
+        if Keyword.get(opts, :exception) && Keyword.get(opts, :last_expr) == expr && buffer == "" do
+          set_prompts(:normal)
+          reraise(e, __STACKTRACE__)
+        else  
+          opts = Keyword.delete(opts, :last_expr) 
+                 |>  Keyword.delete(:exception) 
+          set_prompts(:paste)
+          Server.iex_parse(bin  <> expr)
+          |> iex_parse([{:exception, true}, {:last_expr, expr} | opts], "")
+      end
+    end
   end
   
   @doc """
@@ -961,6 +1043,7 @@ defmodule IExHistory2 do
     colors = Keyword.get(config, :colors, @default_colors)
     new_colors = Enum.map(@default_colors, fn {key, default} -> {key, Keyword.get(colors, key, default)} end)
     custom_regex = Keyword.get(config, :paste_eval_regex, [])
+    new_keys = Keyword.get(config, :navigation_keys, @default_navigation_keys)
     config = Keyword.delete(config, :colors)
 
     new_config =
@@ -970,6 +1053,7 @@ defmodule IExHistory2 do
           {:colors, _} -> {:colors, Keyword.get(config, :colors, new_colors)}
           {:limit, current} when current > infinity_limit -> {:limit, Keyword.get(config, :limit, infinity_limit)}
           {:paste_eval_regex, regex} -> compile_regex(regex ++ custom_regex)
+          {:navigation_keys, keys} -> {:navigation_keys, make_navigation_keys(keys, new_keys)}
           {key, default} -> {key, Keyword.get(config, key, default)}
         end
       ) |> List.flatten()
@@ -983,10 +1067,17 @@ defmodule IExHistory2 do
       new_config
     end
   end
+  
+  defp make_navigation_keys(keys, new_keys) do
+    Map.merge(keys, new_keys)
+    |> Enum.map(fn {k, v} -> {k, <<v>>} end)
+    |> Enum.into(%{})
+  end
 
   defp compile_regex(regex) do
-    compiled = Enum.uniq(regex) |> Enum.map(&Regex.compile!("#{&1}<(.*)>"))  
-    [{:compiled_paste_eval_regex, compiled}, {:paste_eval_regex, regex}]
+    match = Enum.uniq(regex) |> Enum.map(&Regex.compile!("#{&1}<(.*)>")) 
+    no_match = Enum.uniq(regex) |> Enum.map(&Regex.compile!("\"#{&1}<(.*)>\""))   
+    [{:compiled_paste_eval_regex, %{match: match, no_match: no_match}}, {:paste_eval_regex, regex}]
   end
   
   defp history_configured?(config) do
@@ -1005,10 +1096,45 @@ defmodule IExHistory2 do
 
   defp present_welcome(:not_ok), do: :ok
 
-  defp present_welcome(_), do: inject_command("IExHistory2.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
-
+  defp present_welcome(config) do 
+    inject_command("IExHistory2.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
+    config
+  end
+  
   defp set_enabled(config) do
     Process.put(:history_is_enabled, true)
     config
   end
+  
+  defp finalize_startup(%{eval_mode: :shell} = config) do
+    Process.put(:alive_prompt, IEx.Config.alive_prompt)
+    Process.put(:default_prompt, IEx.Config.default_prompt)
+    IEx.configure(parser: {__MODULE__, :iex_parse, []})
+    Server.enable()
+    config
+  end
+
+  defp finalize_startup(config) do
+    config
+  end
+    
+  defp set_prompts(:paste) do
+    Process.put(:iex_paste_mode, true)
+    IEx.configure(alive_prompt: "  ")
+    IEx.configure(default_prompt: "  ")
+  end
+  
+  defp set_prompts(:incomplete) do
+    IEx.configure(alive_prompt: "incomplete>>")
+    IEx.configure(default_prompt: "incomplete>>")
+  end
+  
+  defp set_prompts(_) do
+    if Process.get(:iex_paste_mode, false) do
+      IEx.configure(alive_prompt: Process.get(:alive_prompt, @alive_prompt))
+      IEx.configure(default_prompt: Process.get(:default_prompt, @default_prompt))
+      Process.delete(:iex_paste_mode)
+    end
+  end
+  
 end

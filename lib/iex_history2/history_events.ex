@@ -433,7 +433,8 @@ defmodule IExHistory2.Events do
       last_scan_command: "",
       paste_buffer: "",
       data_in_editor: "",
-      re_evaluating: false
+      re_evaluating: false,
+      enabled: false
     }
   end
 
@@ -457,8 +458,9 @@ defmodule IExHistory2.Events do
         limit -> limit
       end  
      Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
-                           :save_invalid_results, :key_buffer_history, 
-                           :compiled_paste_eval_regex, :running_mode, :import]) 
+                           :save_invalid_results, :key_buffer_history, :navigation_keys, 
+                           :compiled_paste_eval_regex, :paste_eval_regex, :running_mode,
+                           :import, :eval_mode]) 
      |> Enum.into(%{store_count: 0, limit: real_limit})
      |> Server.start_link()
   end

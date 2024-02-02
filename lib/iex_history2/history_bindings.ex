@@ -49,7 +49,7 @@ defmodule IExHistory2.Bindings do
     db_labels = init_stores(scope, my_node)
     server_pid = :group.whereis_shell()
     shell_pid = self()
-    reg_name = make_reg_name()
+    reg_name = make_registered_name()
     leader = Process.group_leader()
     load_bindings(db_labels)
 
@@ -74,7 +74,7 @@ defmodule IExHistory2.Bindings do
       get_bindings()
       |> Enum.sort()
       |> Enum.each(fn({name, val}) -> 
-              val = pp_binding(val, name)  
+              val = pretty_print_binding(val, name)  
               IO.puts("\n#{IO.ANSI.white()}Binding: #{color(:binding)}#{name}")
               IO.puts("#{IO.ANSI.white()}Value:   #{val}")
       end)
@@ -111,16 +111,34 @@ defmodule IExHistory2.Bindings do
       _ -> raise("not found")
     end
   end
-  
+
   @doc false
-  def get_binding(var, name) do
+  def get_binding_as_string(var, name) do
+    case get_binding(var, name, false) do
+      ^var -> var
+      res when is_bitstring(res) -> res
+      res -> inspect(res, limit: :infinity, printable_limit: :infinity)
+    end  
+  end
+    
+  @doc false
+  def get_binding(var, name, raise? \\ true)
+  
+  def get_binding(var, name, raise?) when is_bitstring(var) do
+    String.trim(var)
+    |> String.to_atom()
+    |> get_binding(name, raise?)
+  end
+  
+  def get_binding(var, name, raise?) do
     pid = if is_atom(name), 
       do: Process.whereis(name),
       else: name
     {_, dict} = Process.info(pid, :dictionary)
     case :ets.lookup(Keyword.get(dict, :history_bindings_ets_label), var) do
       [{_, val}] -> val
-      _ -> raise("not found")
+      _ when raise? -> raise("not found")
+      _ -> var
     end
   end
   
@@ -355,14 +373,14 @@ defmodule IExHistory2.Bindings do
     inject_command(bindings <> " :ok")
   end
 
-  defp make_reg_name() do
+  defp make_registered_name() do
     gl_node = IExHistory2.my_real_node() |> Atom.to_string()
     String.to_atom("history_binding_finder_#{gl_node}")
   end
 
   defp send_msg(event) do
     try do
-      send(Process.whereis(make_reg_name()), event)
+      send(Process.whereis(make_registered_name()), event)
     catch
       _, _ -> :error
     end
@@ -377,20 +395,20 @@ defmodule IExHistory2.Bindings do
     end
   end
   
-  defp pp_binding(value, name) when is_function(value) do
+  defp pretty_print_binding(value, name) when is_function(value) do
     case IExHistory2.Events.find_history_item("#{name}=") do
       {:ok, val} -> 
         String.split(val, "=", parts: 2) 
         |> List.last() 
         |> String.trim()
         |> then(fn v -> {:func, v} end)
-        |> pp_binding(name)
+        |> pretty_print_binding(name)
         
-      _ -> pp_binding({:func, value}, name) 
+      _ -> pretty_print_binding({:func, value}, name) 
     end
   end
 
-  defp pp_binding(value, _) do
+  defp pretty_print_binding(value, _) do
     String.slice(inspect(value, syntax_colors: IO.ANSI.syntax_colors, pretty: false, limit: 50), 0, 150)
   end
   
