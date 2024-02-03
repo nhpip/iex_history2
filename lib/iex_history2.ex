@@ -355,7 +355,6 @@ defmodule IExHistory2 do
     paste_eval_regex: @default_paste_eval_regex,
     navigation_keys: @default_navigation_keys,
     import: true,
-    eval_mode: :shell,
     save_invalid_results: false,
     key_buffer_history: true,
     colors: @default_colors
@@ -379,7 +378,6 @@ defmodule IExHistory2 do
       paste_eval_regex: [],
       navigation_keys: %{up: 21, down: 11}
       save_bindings: true,
-      eval_mode: :shell,
       colors: [
         index: :red,
         date: :green,
@@ -406,13 +404,13 @@ defmodule IExHistory2 do
         do: inject_command("import IExHistory2, only: #{inspect(@shell_imports)}")
 
       IExHistory2.Events.initialize(new_config)
-      |> IExHistory2.Bindings.initialize()
       |> set_enabled()
       |> present_welcome()
-      |> Enum.into(%{})
-      |> finalize_startup() 
+      |> finalize_startup()
     else
-      if is_enabled?(), do: :history_already_enabled, else: :history_disabled
+      if is_enabled?(), 
+        do: :history_already_enabled,
+        else: :history_disabled
     end
   end
   
@@ -427,7 +425,7 @@ defmodule IExHistory2 do
     init_save_config(config)
     |> Keyword.put(:running_mode, :supervisor)
     |> IExHistory2.Events.initialize()
-    |> Map.get(:events_server_pid)
+    |> Keyword.get(:events_server_pid)
   end
   
   @doc false
@@ -450,15 +448,12 @@ defmodule IExHistory2 do
     end 
   end
     
+  @doc false
   def iex_parse(expr, opts, buffer) do
     if String.contains?(expr, "#iex:break") do
       set_prompts(:normal)
       raise("break")
     end   
-    bin = case buffer do 
-          {s, _} -> s; 
-          s -> s 
-        end
     try do 
        case IEx.Evaluator.parse(expr, opts, buffer) do
         {:ok, {:def, _, _} = ast, _rsp} ->
@@ -488,9 +483,13 @@ defmodule IExHistory2 do
         if Keyword.get(opts, :exception) && Keyword.get(opts, :last_expr) == expr && buffer == "" do
           set_prompts(:normal)
           reraise(e, __STACKTRACE__)
-        else  
+        else   
+          bin = case buffer do
+                  {s, _} -> s
+                  s -> s 
+                end
           opts = Keyword.delete(opts, :last_expr) 
-                 |>  Keyword.delete(:exception) 
+                |>  Keyword.delete(:exception)
           set_prompts(:paste)
           Server.iex_parse(bin  <> expr)
           |> iex_parse([{:exception, true}, {:last_expr, expr} | opts], "")
@@ -501,12 +500,14 @@ defmodule IExHistory2 do
   @doc """
   Displays the current configuration.
   """
-  def configuration(), do: Process.get(:history_config, [])
+  def configuration(),
+    do: Process.get(:history_config, [])
 
   @doc """
   Displays the default configuration.
   """
-  def default_config(), do: @default_config
+  def default_config(),
+    do: @default_config
 
   @doc """
   Displays the current state:
@@ -969,13 +970,17 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def my_real_node(), do: :erlang.node(Process.group_leader())
+  def my_real_node() do
+    Kernel.node(Process.group_leader())
+  end
+  
+  @doc false
+  def module_name(),
+    do: @module_name
 
   @doc false
-  def module_name(), do: @module_name
-
-  @doc false
-  def exec_name(), do: @exec_name
+  def exec_name(),
+    do: @exec_name
 
   @doc false
   def exclude_from_history() do
@@ -983,24 +988,28 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def configuration(item, default), do: Keyword.get(configuration(), item, default)
-
+  def configuration(item, default) do
+    Keyword.get(configuration(), item, default)
+  end
+  
   @doc false
   def persistence_mode(:local) do
     my_node = my_real_node()
-    {:ok, true, :local, my_node}
+    %{init: true, scope: :local, node: my_node}
   end
 
   @doc false
-  def persistence_mode(:global), do: {:ok, true, :global, :no_node}
-
+  def persistence_mode(:global) do 
+    %{init: true, scope: :global, node: :no_node}
+  end
+  
   @doc false
   def persistence_mode(node) when is_atom(node) do
     my_node = my_real_node()
 
     if my_node == node,
-      do: {:ok, true, :local, my_node},
-      else: {:ok, false, :no_label, :no_node}
+      do: %{init: true, scope: :local, node: my_node},
+      else: %{init: false, scope: :no_label, node: :no_node}
   end
 
   @doc false
@@ -1009,11 +1018,15 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def persistence_mode(_), do: {:ok, false, :no_label, :no_node}
-
+  def persistence_mode(_) do
+    %{init: false, scope: :no_label, node: :no_node}
+  end
+  
   @doc false
-  def inject_command(command, name \\ nil), do: IExHistory2.Bindings.inject_command(command, name)
-
+  def inject_command(command, name \\ nil) do
+     IExHistory2.Bindings.inject_command(command, name)
+  end
+  
   defp query_search(fun) do
     try do
       fun.()
@@ -1106,15 +1119,11 @@ defmodule IExHistory2 do
     config
   end
   
-  defp finalize_startup(%{eval_mode: :shell} = config) do
+  defp finalize_startup(config) do
     Process.put(:alive_prompt, IEx.Config.alive_prompt)
     Process.put(:default_prompt, IEx.Config.default_prompt)
     IEx.configure(parser: {__MODULE__, :iex_parse, []})
     Server.enable()
-    config
-  end
-
-  defp finalize_startup(config) do
     config
   end
     

@@ -109,7 +109,7 @@ defmodule IExHistory2.Events.Server do
     GenServer.cast(__MODULE__, message)
   end
 
-   #@doc false
+  @doc false
   def shell_action(action) do
     GenServer.cast(__MODULE__, {:shell, action, self()})
   end
@@ -133,17 +133,17 @@ defmodule IExHistory2.Events.Server do
     case Map.get(process_info, shell_pid) do
       %{store_name: store_name} = shell_info ->
         IExHistory2.Store.delete_all_objects(store_name)
-        {:reply, :ok_done, %{process_info | shell_pid => %{shell_info | queue: {0, []}}}}
+        {:reply, :ok, %{process_info | shell_pid => %{shell_info | queue: {0, []}}}}
 
       _ ->
-        {:reply, :ok_done, process_info}
+        {:reply, :ok, process_info}
     end
   end
 
   def handle_call({:clear_history, range}, _from, process_info) do
     new_process_info = %{process_info | limit: range}
     apply_table_limits(new_process_info, :requested)
-    {:reply, :ok_done, process_info}
+    {:reply, :ok, process_info}
   end
 
   def handle_call(:stop_clear, _from, process_info) do
@@ -187,8 +187,9 @@ defmodule IExHistory2.Events.Server do
     {:reply, :ok, process_info}
   end
 
-  def handle_cast({:register_new_shell, shell_config}, process_info) do
-    new_process_info = do_register_new_shell(shell_config, process_info)
+  def handle_cast({:register_new_shell, %{binding_server_config: binding_cfg} = shell_config}, process_info) do
+    {:ok, binding_pid} = Bindings.initialize(binding_cfg)
+    new_process_info = do_register_new_shell(%{shell_config | binding_server_pid: binding_pid}, process_info)
     {:noreply, new_process_info}
   end
 
@@ -298,44 +299,9 @@ defmodule IExHistory2.Events.Server do
         {:noreply, process_info}
     end
   end
-  
-  def handle_info({:xtrace, _, :send, {:eval, _, command, _, _}, shell_pid}, process_info) do
-    case Map.get(process_info, shell_pid) do
-      %{pending_command: pending_command} = shell_config ->
-        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: pending_command <> command}}}
 
-      _ ->
-        {:noreply, process_info}
-    end
-  end
-
-  def handle_info({:xtrace, _, :receive, {:evaled, shell_pid, :ok, _}}, process_info) do
-    case validate_command(process_info, shell_pid) do
-      {true, new_command, new_process_info} ->
-        new_process_info = save_traced_command(new_command, shell_pid, new_process_info)
-        {:noreply, new_process_info}
-
-      {_, _, new_process_info} ->
-        {:noreply, new_process_info}
-    end
-  end
-
-  def handle_info({:xtrace, _, :receive, {:evaled, shell_pid, :error, _}}, %{compiled_paste_eval_regex: regex} = process_info) do
-    case Map.get(process_info, shell_pid) do
-      %{pending_command: pending_command, server_pid: server_pid, re_evaluating: false} = shell_config when byte_size(pending_command) > 0 ->
-          send(shell_pid, {:eval, server_pid, make_term_pasteable(pending_command, regex), 1, {"", :other}})
-          {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: true}}}
-        
-      shell_config when is_map(shell_config) ->
-        {:noreply, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
-          
-      _ ->
-        {:noreply, process_info}
-    end
-  end
-
-  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{eval_mode: eval_mode, compiled_paste_eval_regex: regex} = process_info) do
-    manage_tracing(server_pid, false, eval_mode, :editor)
+  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{compiled_paste_eval_regex: regex} = process_info) do
+    manage_tracing(server_pid, false, :editor)
     data = make_term_pasteable(data, regex)
     Enum.find(
       process_info,
@@ -428,15 +394,14 @@ defmodule IExHistory2.Events.Server do
   end
 
   defp do_register_new_shell(
-         %{shell_pid: shell_pid, server_pid: server_pid, shell_parent_node: shell_parent_node} = shell_config,
-         %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count, navigation_keys: navigation, eval_mode: eval_mode} = process_info
+         %{shell_pid: shell_pid, shell_parent_node: shell_parent_node} = shell_config,
+         %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count, navigation_keys: navigation} = process_info
        ) do
     if Map.get(process_info, shell_pid) == nil do
       store_count = IExHistory2.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
       activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)
-      manage_tracing(server_pid, true, eval_mode, :server)
       :erlang.trace_pattern(:receive, @trace_pattern, [])
       activity_queue = create_activity_queue(shell_config, key_buffer_history)
       new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
@@ -604,9 +569,8 @@ defmodule IExHistory2.Events.Server do
     process_info
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command, paste_buffer: ""} = shell_config, 
-                                       %{eval_mode: eval_mode} = process_info, :editor) do
-    manage_tracing(server_pid, true, eval_mode, :editor)  
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
+    manage_tracing(server_pid, true, :editor)  
     send_to_shell(shell_config, "", :scan_action)
 
     if possible_variable?(command),
@@ -615,9 +579,8 @@ defmodule IExHistory2.Events.Server do
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none, data_in_editor: command}}
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, paste_buffer: command} = shell_config, 
-                                       %{eval_mode: eval_mode} = process_info, :editor) do
-    manage_tracing(server_pid, true, eval_mode, :editor)  
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, paste_buffer: command} = shell_config, process_info, :editor) do
+    manage_tracing(server_pid, true, :editor)  
     send_to_shell(shell_config, "", :scan_action)
     if possible_variable?(command), 
       do: send_to_shell(shell_config, Bindings.get_binding_as_string(command, shell_pid), :open_editor),
@@ -706,34 +669,12 @@ defmodule IExHistory2.Events.Server do
       do: {0, [command | Enum.take(queue, size - 1)]},
       else: {0, [command | queue]}
   end
-
-  defp validate_command(process_info, shell_pid) do
-    case Map.get(process_info, shell_pid) do
-      shell_config when is_map(shell_config) ->
-        do_validate_command(shell_config, process_info, shell_pid)
-
-      _ ->
-        process_info
-    end
-  end
-
-  defp do_validate_command(%{pending_command: command} = shell_config, process_info, shell_pid) do
-    if command_valid?(command) do
-      {true, command, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
-    else
-      {false, nil, %{process_info | shell_pid => %{shell_config | pending_command: "", re_evaluating: false}}}
-    end
-  end
   
-  defp manage_tracing(server_pid, mode, :shell, :editor) do
+  defp manage_tracing(server_pid, mode, :editor) do
     :erlang.trace(server_pid, mode, [:receive])
   end
   
-  defp manage_tracing(server_pid, mode, :server, :global) do
-    :erlang.trace(server_pid, mode, [:receive])
-  end
-  
-  defp manage_tracing(_server_pid, _mode, _, _) do
+  defp manage_tracing(_server_pid, _mode, _) do
     0
   end
   
@@ -741,13 +682,6 @@ defmodule IExHistory2.Events.Server do
     to_string(data)
     |> replace_special_terms(regex)
     |> handle_solo_functions()
-  end
-  
-  def pre_process_term(data) do
-    data = to_string(data)
-    m = Regex.compile!("<(.*)\">")
-    Regex.scan(m, data)
-    |> Enum.reduce(data, fn ([mat, rep], term) -> String.replace(term, mat, "<#{String.to_atom(String.replace(rep, "\"", ":"))}>") end)
   end
     
   defp replace_special_terms(data, %{match: match, no_match: no_match}) do
@@ -804,24 +738,6 @@ defmodule IExHistory2.Events.Server do
     rand = Enum.map(1..5, fn _ -> Enum.random(@codepoints) end) 
           |> Enum.join
     "IExHistory2.Random#{rand}XXX"
-  end
-  
-  defp command_valid?(command) do
-    try do
-      find_invalid_comments(command)
-      |> Code.format_string!()
-      true
-    catch
-      _, _ -> false
-    end
-  end
-
-  defp find_invalid_comments(command) do
-    trimmed = String.trim_leading(command)
-
-    if String.starts_with?(trimmed, ["#PID", "#Ref"]),
-      do: String.replace_leading(trimmed, "#", ""),
-      else: command
   end
 
   defp save_traced_command(command, shell_pid, process_info) do
