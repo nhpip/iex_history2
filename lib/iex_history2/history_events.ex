@@ -36,17 +36,9 @@ defmodule IExHistory2.Events do
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     
-    if scope != :global do
-        set_group_history(:disabled)
-        res = IExHistory2.persistence_mode(scope) 
-              |> do_initialize(config)
-        Keyword.put(config, :events_server_pid, res)
-    else    
-        set_group_history(:enabled)
-        res = IExHistory2.persistence_mode(scope) 
-              |> do_initialize(config)
-        Keyword.put(config, :events_server_pid, res)
-    end
+    res = IExHistory2.persistence_mode(scope) 
+          |> do_initialize(config)
+    Keyword.put(config, :events_server_pid, res)
   end
 
   @doc false
@@ -318,10 +310,6 @@ defmodule IExHistory2.Events do
   def color(what) do
     IExHistory2.get_color_code(what)
   end 
-  
-  defp set_group_history(state) do
-    :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
-  end
 
   defp history_item_contains?(command, match, closeness) do
     lc_command = String.downcase(command)
