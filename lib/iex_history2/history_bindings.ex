@@ -26,7 +26,7 @@ defmodule IExHistory2.Bindings do
   @moduledoc false
 
   use GenServer
-  
+
   @ets_name "ets_history_bindings"
   @store_name "history_bindings"
   @bindings_check_interval 2500
@@ -37,8 +37,8 @@ defmodule IExHistory2.Bindings do
 
   @doc false
   def initialize(%{scope: scope, save_bindings: save_bindings?} = config) do
-    if save_bindings? do 
-      IExHistory2.persistence_mode(scope) 
+    if save_bindings? do
+      IExHistory2.persistence_mode(scope)
       |> do_initialize(config)
     end
   end
@@ -54,40 +54,38 @@ defmodule IExHistory2.Bindings do
 
   @doc false
   def get_binding_server_config(scope, save_bindings) do
-    %{binding_count: 0,
+    %{
+      binding_count: 0,
       shell_pid: self(),
       scope: scope,
-      server_pid: :group.whereis_shell(), 
+      server_pid: :group.whereis_shell(),
       group_leader_pid: Process.group_leader(),
       registered_name: get_registered_name(),
       save_bindings: save_bindings,
       db_labels: init_stores(scope)
     }
-  end 
-   
-   @doc false
-   def start_link(%{registered_name: name} = config) do
-    GenServer.start_link(__MODULE__, [config], name: name)
   end
-  
-   @doc false
-   def display_bindings() do
+
+  @doc false
+  def display_bindings() do
     try do
       import IExHistory2.Events, only: [color: 1]
+
       get_bindings()
       |> Enum.sort()
-      |> Enum.each(fn({name, val}) -> 
-              val = pretty_print_binding(val, name)  
-              IO.puts("\n#{IO.ANSI.white()}Binding: #{color(:binding)}#{name}")
-              IO.puts("#{IO.ANSI.white()}Value:   #{val}")
+      |> Enum.each(fn {name, val} ->
+        val = pretty_print_binding(val, name)
+        IO.puts("\n#{IO.ANSI.white()}Binding: #{color(:binding)}#{name}")
+        IO.puts("#{IO.ANSI.white()}Value:   #{val}")
       end)
+
       count = :ets.info(Process.get(:history_bindings_ets_label), :size)
       IO.puts("\nTotal: #{count} variables")
     catch
       _, _ -> []
     end
   end
-  
+
   @doc false
   def get_bindings() do
     try do
@@ -106,7 +104,7 @@ defmodule IExHistory2.Bindings do
       _, _ -> []
     end
   end
-    
+
   @doc false
   def get_binding(var) do
     case :ets.lookup(Process.get(:history_bindings_ets_label), var) do
@@ -121,30 +119,33 @@ defmodule IExHistory2.Bindings do
       ^var -> var
       res when is_bitstring(res) -> res
       res -> inspect(res, limit: :infinity, printable_limit: :infinity)
-    end  
+    end
   end
-    
+
   @doc false
   def get_binding(var, name, raise? \\ true)
-  
+
   def get_binding(var, name, raise?) when is_bitstring(var) do
     String.trim(var)
     |> String.to_atom()
     |> get_binding(name, raise?)
   end
-  
+
   def get_binding(var, name, raise?) do
-    pid = if is_atom(name), 
-      do: Process.whereis(name),
-      else: name
+    pid =
+      if is_atom(name),
+        do: Process.whereis(name),
+        else: name
+
     {_, dict} = Process.info(pid, :dictionary)
+
     case :ets.lookup(Keyword.get(dict, :history_bindings_ets_label), var) do
       [{_, val}] -> val
       _ when raise? -> raise("not found")
       _ -> var
     end
   end
-  
+
   @doc false
   def get_value(label, ets_name) do
     case :ets.lookup(ets_name, label) do
@@ -217,22 +218,22 @@ defmodule IExHistory2.Bindings do
 
   @doc false
   def inject_command(command, name \\ nil)
-  
+
   def inject_command(command, nil) do
     server = find_server()
     send(self(), {:eval, server, command, 1, {"", :other}})
   end
-  
+
   def inject_command(command, name) do
     server = find_server(name)
     send(Process.whereis(name), {:eval, server, command, 1, {"", :other}})
   end
-  
+
   @doc false
   def inject_command(command, pid, server) do
     send(pid, {:eval, server, command, 1, {"", :other}})
   end
-  
+
   @doc false
   def find_server(),
     do: :group.whereis_shell()
@@ -242,14 +243,18 @@ defmodule IExHistory2.Bindings do
     {_, dict} = Process.info(Process.whereis(name), :dictionary)
     Keyword.get(dict, :iex_server)
   end
-  
+
   @doc false
   def get_registered_name() do
     gl_node = IExHistory2.my_real_node() |> Atom.to_string()
     String.to_atom("history_binding_finder_#{gl_node}")
   end
 
-  
+  @doc false
+  def start_link(%{registered_name: name} = config) do
+    GenServer.start_link(__MODULE__, [config], name: name)
+  end
+
   @doc false
   def init([%{server_pid: server_pid, shell_pid: shell_pid} = config]) do
     Process.monitor(server_pid)
@@ -260,56 +265,57 @@ defmodule IExHistory2.Bindings do
 
   def handle_call(:state, _from, %{db_labels: db_labels} = config) do
     size = :ets.info(db_labels.ets_name, :size)
-    new_config =  %{config | binding_count: size}
+    new_config = %{config | binding_count: size}
     {:reply, {:state, new_config}, new_config}
-  end 
-  
-  def handle_call(:clear, _from, %{db_labels: db_labels} = config) do      
+  end
+
+  def handle_call(:clear, _from, %{db_labels: db_labels} = config) do
     :ets.delete_all_objects(db_labels.ets_name)
     IExHistory2.Store.delete_all_objects(db_labels.store_name)
     size = :ets.info(config.db_labels.ets_name, :size)
     {:reply, :ok, %{config | binding_count: size}}
   end
-  
-  def handle_call({:unbind, vars}, _from, %{db_labels: db_labels} = config) do      
+
+  def handle_call({:unbind, vars}, _from, %{db_labels: db_labels} = config) do
     Enum.each(vars, fn label ->
       :ets.delete(db_labels.ets_name, label)
       IExHistory2.Store.delete_data(db_labels.store_name, label)
     end)
+
     size = :ets.info(config.db_labels.ets_name, :size)
     {:reply, :ok, %{config | binding_count: size}}
   end
-  
-  def handle_call(:stop_clear, _from, %{db_labels: db_labels} = config) do      
+
+  def handle_call(:stop_clear, _from, %{db_labels: db_labels} = config) do
     :ets.delete_all_objects(db_labels.ets_name)
     IExHistory2.Store.delete_all_objects(db_labels.store_name)
     IExHistory2.Store.close_store(db_labels.store_name)
     {:stop, :normal, :ok, config}
   end
-    
-  def handle_call(_msg, _from, config) do      
+
+  def handle_call(_msg, _from, config) do
     {:reply, :ok, config}
   end
-  
-  def handle_cast(_msg, config) do      
+
+  def handle_cast(_msg, config) do
     {:noreply, config}
   end
-  
-  def handle_info(:check_bindings, %{db_labels: db_labels} = config) do 
+
+  def handle_info(:check_bindings, %{db_labels: db_labels} = config) do
     new_bindings = get_bindings_from_shell(config)
     persist_bindings(new_bindings, db_labels)
-    Process.send_after(self(), :check_bindings, @bindings_check_interval)     
+    Process.send_after(self(), :check_bindings, @bindings_check_interval)
     {:noreply, config}
   end
-  
-  def handle_info({:DOWN, _ref, :process, _object, _reason}, config) do      
+
+  def handle_info({:DOWN, _ref, :process, _object, _reason}, config) do
     {:stop, :normal, config}
   end
-  
-  def handle_info(_msg, config) do      
+
+  def handle_info(_msg, config) do
     {:noreply, config}
   end
-    
+
   defp init_stores(scope) do
     my_node = IExHistory2.my_real_node()
     str_label = "#{scope}_#{my_node}"
@@ -396,22 +402,22 @@ defmodule IExHistory2.Bindings do
 
     inject_command(bindings <> " :ok")
   end
-  
+
   defp pretty_print_binding(value, name) when is_function(value) do
     case IExHistory2.Events.find_history_item("#{name}=") do
-      {:ok, val} -> 
-        String.split(val, "=", parts: 2) 
-        |> List.last() 
+      {:ok, val} ->
+        String.split(val, "=", parts: 2)
+        |> List.last()
         |> String.trim()
         |> then(fn v -> {:func, v} end)
         |> pretty_print_binding(name)
-        
-      _ -> pretty_print_binding({:func, value}, name) 
+
+      _ ->
+        pretty_print_binding({:func, value}, name)
     end
   end
 
   defp pretty_print_binding(value, _) do
-    String.slice(inspect(value, syntax_colors: IO.ANSI.syntax_colors, pretty: false, limit: 50), 0, 150)
+    String.slice(inspect(value, syntax_colors: IO.ANSI.syntax_colors(), pretty: false, limit: 50), 0, 150)
   end
-  
 end
