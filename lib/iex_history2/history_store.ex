@@ -27,7 +27,7 @@ defmodule IExHistory2.Store do
 
   @doc false
   def open_store(name, filename, scope, store_count \\ 0) do
-    if scope in [:local, :node] do
+    if scope in [:local, :node, :global] do
       :dets.open_file(name, [{:file, to_charlist(filename)}])
       store_count + 1
     else

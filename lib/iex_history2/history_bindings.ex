@@ -53,7 +53,7 @@ defmodule IExHistory2.Bindings do
     do: :not_ok
 
   @doc false
-  def get_binding_server_config(scope, my_node, save_bindings) do
+  def get_binding_server_config(scope, save_bindings) do
     %{binding_count: 0,
       shell_pid: self(),
       scope: scope,
@@ -61,7 +61,7 @@ defmodule IExHistory2.Bindings do
       group_leader_pid: Process.group_leader(),
       registered_name: get_registered_name(),
       save_bindings: save_bindings,
-      db_labels: init_stores(scope, my_node)
+      db_labels: init_stores(scope)
     }
   end 
    
@@ -310,11 +310,9 @@ defmodule IExHistory2.Bindings do
     {:noreply, config}
   end
     
-  defp init_stores(scope, my_node) do
-    str_label =
-      if scope in [:node, :local],
-        do: "#{scope}_#{my_node}",
-        else: Atom.to_string(scope)
+  defp init_stores(scope) do
+    my_node = IExHistory2.my_real_node()
+    str_label = "#{scope}_#{my_node}"
 
     ets_name = String.to_atom("#{@ets_name}_#{str_label}")
     store_name = String.to_atom("#{@store_name}_#{str_label}")

@@ -192,7 +192,7 @@ defmodule IExHistory2.Events.Server do
     new_process_info = do_register_new_shell(%{shell_config | binding_server_pid: binding_pid}, process_info)
     {:noreply, new_process_info}
   end
-
+  
   def handle_cast({:paste_command, shell_pid, command}, process_info) do
     process_info = paste_command(command, shell_pid, process_info)
     {:noreply, process_info}
@@ -394,11 +394,11 @@ defmodule IExHistory2.Events.Server do
   end
 
   defp do_register_new_shell(
-         %{shell_pid: shell_pid, shell_parent_node: shell_parent_node} = shell_config,
+         %{shell_pid: shell_pid, shell_parent_node: shell_parent_node, store_name: store_name} = shell_config,
          %{key_buffer_history: key_buffer_history, scope: scope, store_count: store_count, navigation_keys: navigation} = process_info
        ) do
     if Map.get(process_info, shell_pid) == nil do
-      store_count = IExHistory2.Store.open_store(shell_config.store_name, shell_config.store_filename, scope, store_count)
+      store_count = IExHistory2.Store.open_store(store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
       activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)

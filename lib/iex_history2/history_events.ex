@@ -28,9 +28,7 @@ defmodule IExHistory2.Events do
   # So dets doesn't get too big, may find a better way
   @infinity_limit 3000
   @store_name "store_history_events"
-  @random_string "adarwerwvwvevwwerxrwfx"
 
-  alias Agent.Server
   alias IExHistory2.Bindings
   alias IExHistory2.Events.Server
 
@@ -117,13 +115,8 @@ defmodule IExHistory2.Events do
     {_date, command} = do_get_history_item(i)
     {result, _} = Code.eval_string(command, IExHistory2.get_bindings())
 
-    if IExHistory2.configuration(:scope, :local) == :global do 
-      :rpc.call(IExHistory2.my_real_node(), :group_history, :add, [to_charlist(command)])
-      result
-    else  
-       Server.save_history_command(command)
-       result
-    end
+    Server.save_history_command(command)
+    result
   end
 
   @doc false
@@ -156,40 +149,17 @@ defmodule IExHistory2.Events do
   
   @doc false
   def clear() do
-    if IExHistory2.configuration(:scope, :local) != :global do
-      Server.clear()
-    else
-      (IExHistory2.get_log_path() <> "/erlang-shell*")
-      |> Path.wildcard()
-      |> Enum.each(fn file -> File.rm(file) end)
-    end
+    Server.clear()
   end
 
   @doc false
   def clear_history(range) do
-    cond do
-      IExHistory2.configuration(:scope, :local) != :global ->
-        Server.clear_history(range)
-
-      range == :all ->
-        (IExHistory2.get_log_path() <> "/erlang-shell*")
-        |> Path.wildcard()
-        |> Enum.each(fn file -> File.rm(file) end)
-
-      true ->
-        nil
-    end
+    Server.clear_history(range)
   end
 
   @doc false
   def stop_clear() do
-    if IExHistory2.configuration(:scope, :local) != :global do
-      Server.stop_clear()
-    else
-      (IExHistory2.get_log_path() <> "/erlang-shell*")
-      |> Path.wildcard()
-      |> Enum.each(fn file -> File.rm(file) end)
-    end
+    Server.stop_clear()
   end
 
   @doc false
@@ -344,9 +314,8 @@ defmodule IExHistory2.Events do
   defp display_formatted_date(count, date, command, match \\ "") do
     command = clean_command(command)
     show_date? = IExHistory2.configuration(:show_date, true)
-    scope = IExHistory2.configuration(:scope, :local)
 
-    if show_date? && scope != :global,
+    if show_date?,
       do: IO.puts("#{color(:index)}#{count}: #{match}#{color(:date)}#{date}: #{color(:command)}#{command}"),
       else: IO.puts("#{color(:index)}#{count}: #{match}#{color(:command)}#{command}")
   end
@@ -380,19 +349,7 @@ defmodule IExHistory2.Events do
       end)
   end
   
-  defp do_get_history(:global) do
-    hide_string =
-      if IExHistory2.configuration(:hide_history_commands, true),
-        do: IExHistory2.module_name(),
-        else: @random_string
-
-    :rpc.call(IExHistory2.my_real_node(), :group_history, :load, [])
-    |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, IExHistory2.exec_name()) && not String.starts_with?(cmd, hide_string) end)
-    |> Enum.reverse()
-  end
-
-  defp do_get_history(_) do
+   defp do_get_history(_) do
     store_name = Process.get(:history_events_store_name)
 
     IExHistory2.Store.get_all_objects(store_name)
@@ -401,10 +358,7 @@ defmodule IExHistory2.Events do
   end
 
   defp create_local_shell_state(scope, my_node, save_bindings) do
-    str_label = if scope in [:node, :local],
-                  do: "#{scope}_#{my_node}",
-                  else: Atom.to_string(scope)
-
+    str_label = "#{scope}_#{my_node}"
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = "#{IExHistory2.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
@@ -439,7 +393,7 @@ defmodule IExHistory2.Events do
       re_evaluating: false,
       enabled: false,
       binding_server_pid: nil,
-      binding_server_config: Bindings.get_binding_server_config(scope, my_node, save_bindings)
+      binding_server_config: Bindings.get_binding_server_config(scope, save_bindings)
     }
   end
 

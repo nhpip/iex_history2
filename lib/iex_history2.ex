@@ -262,12 +262,6 @@ defmodule IExHistory2 do
 
   * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
 
-  If a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
-
-      export ERL_AFLAGS="-kernel shell_history enabled"
-
-      --erl "-kernel shell_history enabled"
-
   ## Initialization
   
   ### Using `.iex.exs`
@@ -875,7 +869,6 @@ defmodule IExHistory2 do
       :history_limit
       :hide_history_commands,
       :prepend_identifiers,
-      :save_bindings,
       :command_display_width,
       :save_invalid_results,
       :key_buffer_history,
@@ -936,22 +929,6 @@ defmodule IExHistory2 do
     configuration()
   end
 
-  def configure(:save_bindings, value) when value in [true, false] do
-    if configuration(:scope, :local) != :global do
-      current_value = configuration(:save_bindings, true)
-      new_config = List.keyreplace(configuration(), :save_bindings, 0, {:save_bindings, value})
-
-      if current_value == true,
-        do: IExHistory2.Bindings.stop_clear(),
-        else: IExHistory2.Bindings.initialize(new_config)
-
-      Process.put(:history_config, new_config)
-      configuration()
-    else
-      {:error, :scope_is_global}
-    end
-  end
-
   def configure(:colors, keyword_list) do
     new_colors = Keyword.merge(configuration(:colors, []), keyword_list)
     new_config = List.keyreplace(configuration(), :colors, 0, {:colors, new_colors})
@@ -1000,7 +977,8 @@ defmodule IExHistory2 do
 
   @doc false
   def persistence_mode(:global) do 
-    %{init: true, scope: :global, node: :no_node}
+    my_node = node()
+    %{init: true, scope: :global, node: my_node}
   end
   
   @doc false
@@ -1071,14 +1049,8 @@ defmodule IExHistory2 do
         end
       ) |> List.flatten()
             
-    if Keyword.get(new_config, :scope, :local) == :global do
-      newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
-      Process.put(:history_config, newer_config)
-      newer_config
-    else
-      Process.put(:history_config, new_config)
-      new_config
-    end
+    Process.put(:history_config, new_config)
+    new_config
   end
   
   defp make_navigation_keys(keys, new_keys) do
@@ -1124,7 +1096,9 @@ defmodule IExHistory2 do
     Process.put(:default_prompt, IEx.Config.default_prompt)
     IEx.configure(parser: {__MODULE__, :iex_parse, []})
     Server.enable()
-    config
+    if Keyword.get(config, :running_mode) == :supervisor,
+      do: config,
+      else: :ok
   end
     
   defp set_prompts(:paste) do
