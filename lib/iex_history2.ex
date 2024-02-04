@@ -260,7 +260,7 @@ defmodule IExHistory2 do
 
   * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell
 
-  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
+  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled
 
   ## Initialization
   

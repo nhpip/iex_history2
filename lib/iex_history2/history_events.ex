@@ -36,22 +36,16 @@ defmodule IExHistory2.Events do
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     
-    cond do
-      scope != :global ->
+    if scope != :global do
         set_group_history(:disabled)
         res = IExHistory2.persistence_mode(scope) 
               |> do_initialize(config)
         Keyword.put(config, :events_server_pid, res)
-        
-      scope == :global && get_running_mode(config) == :supervisor ->  
+    else    
         set_group_history(:enabled)
         res = IExHistory2.persistence_mode(scope) 
               |> do_initialize(config)
         Keyword.put(config, :events_server_pid, res)
-        
-      true ->    
-        set_group_history(:enabled)
-        config
     end
   end
 
