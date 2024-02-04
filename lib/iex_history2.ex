@@ -444,12 +444,9 @@ defmodule IExHistory2 do
     
   @doc false
   def iex_parse(expr, opts, buffer) do
-    if String.contains?(expr, "#iex:break") do
-      set_prompts(:normal)
-      raise("break")
-    end   
+    handle_iex_break(expr)  
     try do 
-       case IEx.Evaluator.parse(expr, opts, buffer) do
+       case IEx.Evaluator.parse(expr, opts, buffer) do        
         {:ok, {:def, _, _} = ast, _rsp} ->
           set_prompts(:normal)
           Server.iex_parse(Macro.to_string(ast))
@@ -478,14 +475,10 @@ defmodule IExHistory2 do
           set_prompts(:normal)
           reraise(e, __STACKTRACE__)
         else   
-          bin = case buffer do
-                  {s, _} -> s
-                  s -> s 
-                end
           opts = Keyword.delete(opts, :last_expr) 
-                |>  Keyword.delete(:exception)
+          |>  Keyword.delete(:exception)
           set_prompts(:paste)
-          Server.iex_parse(bin  <> expr)
+          send_for_parsing(expr, buffer)
           |> iex_parse([{:exception, true}, {:last_expr, expr} | opts], "")
       end
     end
@@ -1005,6 +998,21 @@ defmodule IExHistory2 do
      IExHistory2.Bindings.inject_command(command, name)
   end
   
+  defp handle_iex_break(expr) do
+    if String.contains?(expr, "#iex:break") do
+      set_prompts(:normal)
+      raise("break")
+    end 
+  end
+    
+  defp send_for_parsing(expr, {bin, _}) do
+    Server.iex_parse(bin  <> expr)  
+  end
+  
+  defp send_for_parsing(expr, bin) do
+    Server.iex_parse(bin  <> expr)  
+  end
+    
   defp query_search(fun) do
     try do
       fun.()

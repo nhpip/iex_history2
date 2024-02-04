@@ -111,7 +111,7 @@ defmodule IExHistory2.Events.Server do
 
   @doc false
   def shell_action(action) do
-    GenServer.cast(__MODULE__, {:shell, action, self()})
+    GenServer.call(__MODULE__, {:shell, action, self()})
   end
   
   @doc false
@@ -181,6 +181,17 @@ defmodule IExHistory2.Events.Server do
   def handle_call({:enable, _shell_pid} = msg, _from, process_info) do
     Process.send_after(self(), msg, 2000)
     {:reply, :ok, process_info}
+  end
+  
+  def handle_call({:shell, action, shell_pid}, _from, process_info) do
+    case Map.get(process_info, shell_pid) do
+      shell_info when is_map(shell_info) ->
+        send_to_shell(shell_info, :shell, action)
+        {:reply, :ok, process_info}
+
+      _ ->
+        {:reply, :ok, process_info}
+    end
   end
   
   def handle_call(_msg, _from, process_info) do
@@ -490,7 +501,6 @@ defmodule IExHistory2.Events.Server do
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: last_command}, command, :scan_action) do
     command = String.replace(command, ~r/\s+/, " ")
-
     send(
       user_driver,
       {user_driver_group,
@@ -498,8 +508,18 @@ defmodule IExHistory2.Events.Server do
     )
   end
  
+  defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group, last_scan_command: last_command}, command, :paste_up) do
+    command = String.replace(command, ~r/\s+/, " ")
+
+    send(
+      user_driver,
+      {user_driver_group,
+       {:requests, [{:move_rel, -String.length(last_command)}, {:move_line, -1}, :new_prompt, {:insert_chars_over, :unicode, command}]}}
+    )
+  end
+  
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command, :clear_line) do
-     send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)+100}, :delete_line, :redraw_prompt]}})
+     send(user_driver, {user_driver_group, {:requests, [{:move_rel, -String.length(command)}, :delete_line, :redraw_prompt]}})
   end
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :shell, action) do
@@ -516,6 +536,10 @@ defmodule IExHistory2.Events.Server do
 
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command) do
     send(user_driver_group, {user_driver, {:data, String.replace(command, ~r/\s+/, " ")}})
+  end
+
+  defp raw_send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command) do
+    send(user_driver_group, {user_driver, {:data, command}})
   end
 
   defp paste_command(command, shell_pid, process_info) do
@@ -588,10 +612,10 @@ defmodule IExHistory2.Events.Server do
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, paste_buffer: "", last_direction: :none, data_in_editor: command}}
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command} = shell_config, process_info, :enter)
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :enter)
       when byte_size(command) > 0 do
-    send(shell_pid, {:eval, server_pid, command, 1, {"", :other}})
-    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", pending_command: command, last_direction: :none}}
+    raw_send_to_shell(shell_config, command <> "\n")
+    %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "",  last_direction: :none}}
   end
   
   defp handle_cursor_action(_, _, process_info, :enter) do
@@ -678,26 +702,25 @@ defmodule IExHistory2.Events.Server do
     0
   end
   
-  defp make_term_pasteable(data, regex) do
-    to_string(data)
-    |> replace_special_terms(regex)
-    |> handle_solo_functions()
+  defp make_term_pasteable(data, %{match: match} = regex) do
+    data = to_string(data)
+    if term_needs_fixing?(data, match) do
+      replace_special_terms(data, regex)
+      |> handle_solo_functions()
+    else
+      handle_solo_functions(data) 
+    end  
   end
     
   defp replace_special_terms(data, %{match: match, no_match: no_match}) do
-    if term_needs_fixing?(data,match) do
-      regexes = Enum.zip(match, no_match)
-      String.split(data, "\n")
-      |> Enum.map(fn line ->
-            Enum.reduce(regexes, line, 
-              fn {match_regex, no_match_regex}, acc ->
-                repair_line(acc, match_regex, no_match_regex)
-            end)
-      end) 
-      |> Enum.join("\n")
-    else
-      data   
-    end  
+    regexes = Enum.zip(match, no_match)
+    String.split(data, "\n")
+    |> Enum.map_join("\n", fn line ->
+          Enum.reduce(regexes, line, 
+                  fn {match_regex, no_match_regex}, acc -> 
+                    repair_line(acc, match_regex, no_match_regex)
+                  end)
+    end)   
   end
   
   defp handle_solo_functions(data) do
@@ -735,8 +758,7 @@ defmodule IExHistory2.Events.Server do
   end 
     
   defp random_module() do
-    rand = Enum.map(1..5, fn _ -> Enum.random(@codepoints) end) 
-          |> Enum.join
+    rand = Enum.map_join(1..5, "", fn _ -> Enum.random(@codepoints) end) 
     "IExHistory2.Random#{rand}XXX"
   end
 
