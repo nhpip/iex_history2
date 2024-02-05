@@ -59,7 +59,7 @@ defmodule IExHistory2 do
       
       iex> hb()                     - show the current bindings.
       
-      iex> hi()                     - summary
+      iex> hi()                     - show summary / state
 
   **NOTE:** To use `he/1` the environment variable `EDITOR` must be set to point to your editor:
   
@@ -321,7 +321,7 @@ defmodule IExHistory2 do
   
   Or:
   
-      {:iex_history2, github: "nhpip/iex_history2", tag: "5.2.0"},
+      {:iex_history2, github: "nhpip/iex_history2", tag: "5.3.0"},
           
   Add the configuration to your application `config/runtime.exs`. For example:
   
@@ -529,7 +529,10 @@ defmodule IExHistory2 do
   def configuration() do
     cfg = Process.get(:history_config, [])
     nav_keys = Keyword.get(cfg, :navigation_keys)
-               |> Enum.map(fn {k, v} -> <<nv::8>> = v; {k, nv} end)      
+               |> Enum.map(fn {k, v} -> 
+                                <<nv::8>> = v
+                                {k, nv} 
+                  end)      
     Keyword.put(cfg, :navigation_keys, nav_keys)
     |> Keyword.delete(:compiled_paste_eval_regex)
   end
@@ -539,19 +542,6 @@ defmodule IExHistory2 do
   """
   def default_config(),
     do: @default_config
-
-  @doc """
-  Displays the current state:
-
-      IExHistory2 version 2.0 is enabled:
-        Current history is 199 commands in size.
-        Current bindings are 153 variables in size.
-  """
-  def state() do
-    IO.puts("IExHistory2 version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
-    IO.puts("  #{Events.state()}.")
-    IO.puts("  #{Bindings.state()}.")
-  end
 
   @doc """
   Displays the entire history.
@@ -683,7 +673,11 @@ defmodule IExHistory2 do
     do: Bindings.display_bindings()
 
   @doc """
-  Show history information summary.
+  Displays the current state:
+
+      IExHistory2 version 5.3 is enabled:
+        Current history is 199 commands in size.
+        Current bindings are 153 variables in size.
   """
   def hi(),
     do: state()
@@ -1019,6 +1013,13 @@ defmodule IExHistory2 do
     filename
   end
 
+  @doc false
+  def state() do
+    IO.puts("IExHistory2 version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
+    IO.puts("  #{Events.state()}.")
+    IO.puts("  #{Bindings.state()}.")
+  end
+  
   @doc false
   def my_real_node() do
     Kernel.node(Process.group_leader())
