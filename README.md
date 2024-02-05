@@ -256,13 +256,6 @@ Clears the history and bindings then stops the service. If scope is :global the 
 ### IExHistory2.configuration()
 Displays the current conifuration
 
-### IExHistory2.save_config(filename)
-Saves the configuration to filename
-
-### IExHistory2.load_config(filename)
-Loads the configuration from filename. 
-NOTE: All changes may not be applied, to do this specify the filename in `IExHistory2.initialize/1` instead of a config keyword list
-
 ### IExHistory2.configure/2
 Allows the following options to be changed:
 ```
