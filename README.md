@@ -423,6 +423,4 @@ Add the configuration to your application `config/runtime.exs`. For example:
 When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
 ```  
       IExHistory2.initialize()
-```
-**NOTE:** `:scope` of `:global` is not fully complete.
-  
+```  
