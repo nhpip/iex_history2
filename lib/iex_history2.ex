@@ -911,19 +911,13 @@ defmodule IExHistory2 do
   def unbind(vars) when is_list(vars), do: Bindings.unbind(vars)
   def unbind(var), do: unbind([var])
 
-  @doc """
-  Saves the current configuration to file.
-  """
+  @doc false
   def save_config(filename) do
     data = :io_lib.format("~p.", [raw_configuration()]) |> List.flatten()
     :file.write_file(filename, data)
   end
 
-  @doc """
-  Loads the current configuration to file `IExHistory2.save_config()`.
-
-  NOTE: Not all options can be set during run-time. Instead pass the filename as a single argument to `IExHistory2.initialize()`
-  """
+  @doc false
   def load_config(filename) do
     config = do_load_config(filename)
     Process.put(:history_config, config)
