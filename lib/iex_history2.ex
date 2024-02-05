@@ -147,7 +147,7 @@ defmodule IExHistory2 do
       
       ctrl^y    - allows the currently displayed item to be modified.
       
-      ctrl^e    - opens the currently displayed item in an editor.
+      ctrl^l    - opens the currently displayed item in an editor.
               
       ctrl^[    - reset navigation, returns to the prompt.
               
@@ -155,30 +155,40 @@ defmodule IExHistory2 do
 
   ## Configuration
     
-  The following options can be set either as a keyword list in `.iex.exs`.
+  The following options can be set either as a keyword list in `.iex.exs` (a sample file is 
+  included in the `github` repository):
 
       [
-        scope: :local,
-        history_limit: :infinity,
-        import: true,
-        hide_history_commands: true,
-        prepend_identifiers: true,
-        command_display_width: int,
-        save_invalid_results: false,
-        key_buffer_history: true,
-        paste_eval_regex: [],
-        show_date: true,
-        save_bindings: true,
         colors: [
           index: :red,
           date: :green,
           command: :yellow,
           label: :red,
-          variable: :green
-        ]
+          variable: :green,
+          binding: :cyan
+        ],
+        command_display_width: 150,
+        hide_history_commands: true,
+        history_limit: :infinity,
+        import: true,
+        key_buffer_history: true,
+        navigation_keys: [
+          up: 21,
+          down: 11,
+          editor: 12,
+          modify: 8,
+          abandon: 27,
+          enter: 13
+        ],
+        paste_eval_regex: ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"],
+        prepend_identifiers: true,
+        save_bindings: true,
+        save_invalid_results: false,
+        scope: :local,
+        show_date: true
       ]
 
-  Or in `config/runtime.exs` if using Mix:
+  Or in `config/runtime.exs`:
  
       config :your_app, IExHistory2,
         scope: :local,
@@ -193,10 +203,9 @@ defmodule IExHistory2 do
   
       import: true
       
-  One current issue with the current shell is the inconsistent ability to paste large terms into
-  the shell. Terms such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
-  The application will attempt to recognize such terms during evaluation, wrap them in quotes and attempt
-  to re-evaluate. 
+  One issue with the current shell is the inconsistent ability to paste large terms into
+  the shell. Types such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
+  `IExHistory2` will attempt to recognize and parse such terms during evaluation. 
   
   Currently process ids, references, anonymous functions, ports and `#Ecto.Schema.Metadata` are 
   supported by default. Additional terms can be added:
@@ -215,7 +224,15 @@ defmodule IExHistory2 do
       
       key_buffer_history: true
       
-  Unlike the standard up/down arrow history this is command based not line based. So pasting of a large term or source code will only require 1 up or down key.
+  Unlike the standard up/down arrow history where the up-arrow key has to be pressed multiple times to 
+  traverse a large term, `IExHistory2` only requires a single up/down key, and the entire term can then
+  be edited.
+  
+  The default navigation keys are defined above, but can be changed to any reasonable value. Please be aware
+  that certain key are reserved by the runtime and can not be used. The values should be set to decimal, the 
+  example below sets opening the editor from `ctrl^l` to `ctrl^e`
+  
+      navigation_keys: [editor: 5]
     
   If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
@@ -256,11 +273,11 @@ defmodule IExHistory2 do
 
   `scope:` can be one of `:local, :global `or a `node name`
 
-  * `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
+  * `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique.
 
-  * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell
+  * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell.
 
-  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled
+  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled.
 
   ## Initialization
   
@@ -278,7 +295,7 @@ defmodule IExHistory2 do
    
   Add to `mix.exs` as a dependency: 
   
-      {:iex_history2, "~> 5.2"}
+      {:iex_history2, "~> 5.3"}
   
   Or:
   
@@ -297,8 +314,6 @@ defmodule IExHistory2 do
   When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
   
       IExHistory2.initialize()
-
-  **NOTE:** `:scope` of `:global` is not fully complete.
   
   """
 
@@ -321,7 +336,7 @@ defmodule IExHistory2 do
   
   @history_up_key 21 # ctrl+u
   @history_down_key 11  # ctrl+k
-  @editor_key 05 # ctrl+e
+  @editor_key 12 # ctrl+l
   @modify_key 08 # ctrl+h
   @abandon_key 27 # ctrl+[ or esc(ape)
   @enter_key 13
@@ -329,12 +344,12 @@ defmodule IExHistory2 do
   @alive_prompt "%prefix(%node)%counter>"
   @default_prompt "%prefix(%counter)>"
   
-  @default_navigation_keys %{up: @history_up_key,
-                             down: @history_down_key,
-                             editor: @editor_key,
-                             modify: @modify_key,
-                             abandon: @abandon_key,
-                             enter: @enter_key}
+  @default_navigation_keys [up: @history_up_key,
+                            down: @history_down_key,
+                            editor: @editor_key,
+                            modify: @modify_key,
+                            abandon: @abandon_key,
+                            enter: @enter_key]
   
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green, binding: :cyan]
@@ -370,7 +385,7 @@ defmodule IExHistory2 do
       show_date: true,
       import: true,
       paste_eval_regex: [],
-      navigation_keys: %{up: 21, down: 11}
+      navigation_keys: [up: 21, down: 11, ...]
       save_bindings: true,
       colors: [
         index: :red,
@@ -487,9 +502,14 @@ defmodule IExHistory2 do
   @doc """
   Displays the current configuration.
   """
-  def configuration(),
-    do: Process.get(:history_config, [])
-
+  def configuration() do
+    cfg = Process.get(:history_config, [])
+    nav_keys = Keyword.get(cfg, :navigation_keys)
+               |> Enum.map(fn {k, v} -> <<nv::8>> = v; {k, nv} end)      
+    Keyword.put(cfg, :navigation_keys, nav_keys)
+    |> Keyword.delete(:compiled_paste_eval_regex)
+  end
+  
   @doc """
   Displays the default configuration.
   """
@@ -841,7 +861,7 @@ defmodule IExHistory2 do
   Saves the current configuration to file.
   """
   def save_config(filename) do
-    data = :io_lib.format("~p.", [configuration()]) |> List.flatten()
+    data = :io_lib.format("~p.", [raw_configuration()]) |> List.flatten()
     :file.write_file(filename, data)
   end
 
@@ -994,6 +1014,11 @@ defmodule IExHistory2 do
   end
   
   @doc false
+  def raw_configuration() do
+    Process.get(:history_config, [])
+  end
+  
+  @doc false
   def inject_command(command, name \\ nil) do
      IExHistory2.Bindings.inject_command(command, name)
   end
@@ -1062,9 +1087,8 @@ defmodule IExHistory2 do
   end
   
   defp make_navigation_keys(keys, new_keys) do
-    Map.merge(keys, new_keys)
+    Keyword.merge(keys, new_keys)
     |> Enum.map(fn {k, v} -> {k, <<v>>} end)
-    |> Enum.into(%{})
   end
 
   defp compile_regex(regex) do

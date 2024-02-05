@@ -28,7 +28,8 @@ defmodule IExHistory2.Events do
   # So dets doesn't get too big, may find a better way
   @infinity_limit 3000
   @store_name "store_history_events"
-
+  @hx_command_width 50
+  
   alias IExHistory2.Bindings
   alias IExHistory2.Events.Server
 
@@ -100,7 +101,8 @@ defmodule IExHistory2.Events do
   def execute_history_item(i) do
     {_date, command} = do_get_history_item(i)
     {result, _} = Code.eval_string(command, IExHistory2.get_bindings())
-
+    width = min(get_command_width(), @hx_command_width)
+    IO.puts("iex> #{color(:command)}#{clean_command(command, width)}")
     Server.save_history_command(command)
     result
   end

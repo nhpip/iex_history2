@@ -120,9 +120,9 @@ defmodule IExHistory2.Events.Server do
   end
 
   @doc false
-  def init([process_info]) do
+  def init([%{navigation_keys: nav_keys} = process_info]) do
     Process.send_after(self(), :size_check, @size_check_interval)
-    {:ok, process_info}
+    {:ok, %{process_info | navigation_keys: Enum.into(nav_keys, %{})}}
   end
 
   def handle_call({:iex_parse, expr}, _from, %{compiled_paste_eval_regex: regex} = process_info) do
