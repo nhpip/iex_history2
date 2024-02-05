@@ -243,7 +243,7 @@ Loads the configuration from filename.
 NOTE: All changes may not be applied, to do this specify the filename in `IExHistory2.initialize/1` instead of a config keyword list
 
 ### IExHistory2.configure/2
-Allows the following options to be changed, but not saved:
+Allows the following options to be changed:
 ```
     :show_date
     :history_limit
@@ -265,7 +265,9 @@ Returns true or false is IExHistory2 is enabled
 
 
 ## Configuration
-The following options can be set in `~/.iex.exs`:
+The following options can be set:
+
+### In `~/.iex.exs`:
 ```
     [
       colors: [
@@ -297,7 +299,7 @@ The following options can be set in `~/.iex.exs`:
       show_date: true
     ]
 ```
-Or in `config/runtime.exs` if using Mix:
+### Same options in `config/runtime.exs`:
 ``` 
   config :iex_history2,
     scope: :local,
