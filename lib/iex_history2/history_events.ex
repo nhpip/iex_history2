@@ -412,7 +412,7 @@ defmodule IExHistory2.Events do
   end
   
   defp get_running_mode_or_scope(config, what) do
-    Process.whereis(IExHistory2.Events.Server)
+    Process.whereis(Server)
     |> then(
         fn(pid) when is_pid(pid) ->
           :sys.get_state(pid)
