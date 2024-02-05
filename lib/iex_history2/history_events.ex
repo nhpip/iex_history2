@@ -28,32 +28,18 @@ defmodule IExHistory2.Events do
   # So dets doesn't get too big, may find a better way
   @infinity_limit 3000
   @store_name "store_history_events"
-  @random_string "adarwerwvwvevwwerxrwfx"
-
-  alias Agent.Server
+  @hx_command_width 50
+  
+  alias IExHistory2.Bindings
   alias IExHistory2.Events.Server
 
   @doc false
   def initialize(config) do
     scope = Keyword.get(config, :scope, :local)
     
-    cond do
-      scope != :global ->
-        set_group_history(:disabled)
-        res = IExHistory2.persistence_mode(scope) 
-              |> do_initialize(config)
-        Keyword.put(config, :events_server_pid, res)
-        
-      scope == :global && get_running_mode(config) == :supervisor ->  
-        set_group_history(:enabled)
-        res = IExHistory2.persistence_mode(scope) 
-              |> do_initialize(config)
-        Keyword.put(config, :events_server_pid, res)
-        
-      true ->    
-        set_group_history(:enabled)
-        config
-    end
+    res = IExHistory2.persistence_mode(scope) 
+          |> do_initialize(config)
+    Keyword.put(config, :events_server_pid, res)
   end
 
   @doc false
@@ -115,11 +101,9 @@ defmodule IExHistory2.Events do
   def execute_history_item(i) do
     {_date, command} = do_get_history_item(i)
     {result, _} = Code.eval_string(command, IExHistory2.get_bindings())
-
-    if IExHistory2.configuration(:scope, :local) == :global,
-      do: :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :add, [to_charlist(command)]),
-      else: Server.save_history_command(command)
-
+    width = min(get_command_width(), @hx_command_width)
+    IO.puts("iex> #{color(:command)}#{clean_command(command, width)}")
+    Server.save_history_command(command)
     result
   end
 
@@ -153,40 +137,17 @@ defmodule IExHistory2.Events do
   
   @doc false
   def clear() do
-    if IExHistory2.configuration(:scope, :local) != :global do
-      Server.clear()
-    else
-      (IExHistory2.get_log_path() <> "/erlang-shell*")
-      |> Path.wildcard()
-      |> Enum.each(fn file -> File.rm(file) end)
-    end
+    Server.clear()
   end
 
   @doc false
   def clear_history(range) do
-    cond do
-      IExHistory2.configuration(:scope, :local) != :global ->
-        Server.clear_history(range)
-
-      range == :all ->
-        (IExHistory2.get_log_path() <> "/erlang-shell*")
-        |> Path.wildcard()
-        |> Enum.each(fn file -> File.rm(file) end)
-
-      true ->
-        nil
-    end
+    Server.clear_history(range)
   end
 
   @doc false
   def stop_clear() do
-    if IExHistory2.configuration(:scope, :local) != :global do
-      Server.stop_clear()
-    else
-      (IExHistory2.get_log_path() <> "/erlang-shell*")
-      |> Path.wildcard()
-      |> Enum.each(fn file -> File.rm(file) end)
-    end
+    Server.stop_clear()
   end
 
   @doc false
@@ -271,12 +232,13 @@ defmodule IExHistory2.Events do
     |> Enum.reverse()
   end
 
-  defp do_initialize({:ok, true, scope, node}, config) do
+  defp do_initialize(%{init: true, scope: scope, node: node}, config) do
     if Keyword.get(config, :running_mode, :normal) == :supervisor do
-      register_or_start_tracer_service(%{}, config)
+      start_and_configure_events_server(%{}, config)
     else
-      local_shell_state = create_local_shell_state(scope, node)
-      register_or_start_tracer_service(local_shell_state, config)
+      save_bindings = Keyword.get(config, :save_bindings, true)
+      local_shell_state = create_local_shell_state(scope, node, save_bindings)
+      start_and_configure_events_server(local_shell_state, config)
     end
   end
   
@@ -340,9 +302,8 @@ defmodule IExHistory2.Events do
   defp display_formatted_date(count, date, command, match \\ "") do
     command = clean_command(command)
     show_date? = IExHistory2.configuration(:show_date, true)
-    scope = IExHistory2.configuration(:scope, :local)
 
-    if show_date? && scope != :global,
+    if show_date?,
       do: IO.puts("#{color(:index)}#{count}: #{match}#{color(:date)}#{date}: #{color(:command)}#{command}"),
       else: IO.puts("#{color(:index)}#{count}: #{match}#{color(:command)}#{command}")
   end
@@ -351,10 +312,6 @@ defmodule IExHistory2.Events do
   def color(what) do
     IExHistory2.get_color_code(what)
   end 
-  
-  defp set_group_history(state) do
-    :rpc.call(:erlang.node(Process.group_leader()), Application, :put_env, [:kernel, :shell_history, state])
-  end
 
   defp history_item_contains?(command, match, closeness) do
     lc_command = String.downcase(command)
@@ -376,19 +333,7 @@ defmodule IExHistory2.Events do
       end)
   end
   
-  defp do_get_history(:global) do
-    hide_string =
-      if IExHistory2.configuration(:hide_history_commands, true),
-        do: IExHistory2.module_name(),
-        else: @random_string
-
-    :rpc.call(:erlang.node(:erlang.group_leader()), :group_history, :load, [])
-    |> Enum.map(fn cmd -> {"undefined", String.trim(to_string(cmd))} end)
-    |> Enum.filter(fn {_date, cmd} -> not String.contains?(cmd, IExHistory2.exec_name()) && not String.starts_with?(cmd, hide_string) end)
-    |> Enum.reverse()
-  end
-
-  defp do_get_history(_) do
+   defp do_get_history(_) do
     store_name = Process.get(:history_events_store_name)
 
     IExHistory2.Store.get_all_objects(store_name)
@@ -396,18 +341,14 @@ defmodule IExHistory2.Events do
     |> Enum.map(fn {date, cmd} -> {unix_to_date(date), String.trim(cmd)} end)
   end
 
-  defp create_local_shell_state(scope, my_node) do
-    str_label =
-      if scope in [:node, :local],
-        do: "#{scope}_#{my_node}",
-        else: Atom.to_string(scope)
-
+  defp create_local_shell_state(scope, my_node, save_bindings) do
+    str_label = "#{scope}_#{my_node}"
     store_name = String.to_atom("#{@store_name}_#{str_label}")
     store_filename = "#{IExHistory2.get_log_path()}/history_#{str_label}.dat"
     Process.put(:history_events_store_name, store_name)
     server_pid = :group.whereis_shell()
-    server_node = :erlang.node(server_pid)
-    shell_parent_node = :erlang.node(:erlang.group_leader())
+    server_node = Kernel.node(server_pid)
+    shell_parent_node = IExHistory2.my_real_node()
     user_driver_group = :rpc.call(shell_parent_node, :user_drv, :whereis_group, [])
     user_driver = :rpc.call(shell_parent_node, Process, :whereis, [:user_drv])
 
@@ -433,21 +374,21 @@ defmodule IExHistory2.Events do
       last_scan_command: "",
       paste_buffer: "",
       data_in_editor: "",
-      re_evaluating: false
+      re_evaluating: false,
+      enabled: false,
+      binding_server_pid: nil,
+      binding_server_config: Bindings.get_binding_server_config(scope, save_bindings)
     }
   end
 
-  defp register_or_start_tracer_service(local_shell_state, config) do
-    if Keyword.get(config, :running_mode, :normal) == :supervisor do
-      if Process.whereis(Server) == nil do
-        do_start_tracer_service(config)
-      end   
-    else  
-      if Process.whereis(Server) == nil do
-        do_start_tracer_service(config)
-      end
+  defp start_and_configure_events_server(local_shell_state, config) do
+    pid = if Process.whereis(Server) == nil do
+      do_start_tracer_service(config)
+    end 
+    if Keyword.get(config, :running_mode, :normal) != :supervisor do  
       Server.register_new_shell(local_shell_state)
     end
+    pid
   end
 
   defp do_start_tracer_service(config) do
@@ -457,8 +398,9 @@ defmodule IExHistory2.Events do
         limit -> limit
       end  
      Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
-                           :save_invalid_results, :key_buffer_history, 
-                           :compiled_paste_eval_regex, :running_mode, :import]) 
+                           :save_invalid_results, :key_buffer_history, :navigation_keys, 
+                           :compiled_paste_eval_regex, :paste_eval_regex, :running_mode,
+                           :import]) 
      |> Enum.into(%{store_count: 0, limit: real_limit})
      |> Server.start_link()
   end
@@ -470,7 +412,7 @@ defmodule IExHistory2.Events do
   end
   
   defp get_running_mode_or_scope(config, what) do
-    Process.whereis(IExHistory2.Events.Server)
+    Process.whereis(Server)
     |> then(
         fn(pid) when is_pid(pid) ->
           :sys.get_state(pid)

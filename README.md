@@ -7,13 +7,13 @@ Improved shell history with variable binding persistance.
 * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
 * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
 * Editing can be done in-situ or in a text editor.
-* Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
+* Shell variable bindings can be set/get outside of scope of the shell to assist in application debugging.
 * Can be enabled and state shared globally, or on individual shell sessions.
 
 See section on `Configuration` and `Initialization` to get started.
 
 ## Navigation Keys
-
+The default navigation keys are defined below. They can however be configured to alternative values if so desired.
 ```
     ctrl^u    - Move up through history.
 
@@ -21,11 +21,11 @@ See section on `Configuration` and `Initialization` to get started.
 
     ctrl^y    - Allows the currently displayed item to be modified.
 
-    ctrl^e    - Opens the currently displayed item in an editor.
+    ctrl^l    - Opens the currently displayed item in an editor.
 
     ctrl^[    - Reset navigation, returns to the prompt.
 ```
-NOTE: To use `ctrl^e` the environment variable EDITOR must be set to point to your editor:
+NOTE: To use `ctrl^l` the environment variable EDITOR must be set to point to your editor:
 ```
     export EDITOR="vim"
 ```
@@ -125,6 +125,7 @@ Invokes the command at index 'i'.
     114: 2023-09-01 19:30:14: Enum.count([1, 2, 3])
     
     iex> hx(114)
+    iex> Enum.count([1, 2, 3])
     3
 ```
 
@@ -185,7 +186,7 @@ the shell. For example:
 ```
 The variable can be represented as an atom or string.
 
-### IExHistory2.add_binding/2
+### IExHistory2.get_binding/1
 The inverse of `add_binding/2`
 It allows a variable that is set in the shell to be available in a module under test. For example:
 ```
@@ -207,32 +208,35 @@ It allows a variable that is set in the shell to be available in a module under 
     :path2
     iex> VarTest.get_me(50)
 ```
+The complimentary functions `add_binding/3` and `get_binding/2` that take a shell pid or registered name allowing
+the user to debug applications.
+```
+  defmodule VarTest do
+    def get_me(val) do
+      if IExHistory2.get_binding(:path_to_use, :myshell) == :path1 do
+        result = val + 100
+        IExHistory2.add_binding(:result_var, %{path: :path1, result: result}, :myshell)
+        result
+      else
+        result = val + 200
+        IExHistory2.add_binding(:result_var, %{path: :path2, result: result}, :myshell)
+        result
+      end
+    end
+  end
 
-Experimental varients of `add_binding/2` and get_binding/1` exist that takes an atom that
-is the registered name of a shell process identifier.
+  iex> spawn(fn -> VarTest.get_me(100) end)
+  #PID<0.1557.0>
+  %{path: :path2, result: 300}
+  iex> result_var
+  %{path: :path2, result: 300}
+```            
+See also `IExHistory2.register/1`.
 
 ## Misc Functions
 
 ### IExHistory2.initialize(opts)
-Initializes the IExHistory2 app. Takes the following parameters:
-```
-      [
-        scope: :local,
-        history_limit: :infinity,
-        prepend_identifiers: true,
-        show_date: true,
-        save_invalid_results: false,
-        key_buffer_history: true,
-        save_bindings: true,
-        colors: [
-          index: :red,
-          date: :green,
-          command: :yellow,
-          label: :red,
-          variable: :green
-        ]
-      ]
-```
+Initializes the IExHistory2 app. See the `Configuration` section for options.
 
 ### IExHistory2.clear()
 Clears the history and bindings. If scope is  :global the IEx session needs restarting for the changes to take effect.
@@ -260,7 +264,7 @@ Loads the configuration from filename.
 NOTE: All changes may not be applied, to do this specify the filename in `IExHistory2.initialize/1` instead of a config keyword list
 
 ### IExHistory2.configure/2
-Allows the following options to be changed, but not saved:
+Allows the following options to be changed:
 ```
     :show_date
     :history_limit
@@ -269,7 +273,6 @@ Allows the following options to be changed, but not saved:
     :command_display_width,
     :save_invalid_results,
     :key_buffer_history,
-    :save_bindings,
     :colors
  ```   
 Examples:
@@ -285,34 +288,85 @@ Returns true or false is IExHistory2 is enabled
 ## Configuration
 The following options can be set:
 
+### In `~/.iex.exs`:
+```
     [
-      scope: :local,
-      history_limit: :infinity,
-      hide_history_commands: true,
-      prepend_identifiers: true,
-      command_display_width: int,
-      save_invalid_results: false,
-      key_buffer_history: true,
-      show_date: true,
-      save_bindings: true,
       colors: [
         index: :red,
         date: :green,
         command: :yellow,
         label: :red,
-        variable: :green
-      ]
+        variable: :green,
+        binding: :cyan
+      ],
+      command_display_width: 150,
+      hide_history_commands: true,
+      history_limit: :infinity,
+      import: true,
+      key_buffer_history: true,
+      navigation_keys: [
+        up: 21,
+        down: 11,
+        editor: 5,
+        modify: 8,
+        abandon: 27,
+        enter: 13
+      ],
+      paste_eval_regex: ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"],
+      prepend_identifiers: true,
+      save_bindings: true,
+      save_invalid_results: false,
+      scope: :local,
+      show_date: true
     ]
+```
+### Same options in `config/runtime.exs`:
+``` 
+  config :iex_history2,
+    scope: :local,
+    history_limit: :infinity,
+    paste_eval_regex: [],
+    import: true,
+    ...
+```
+To import short-cut functions set `import:` to true.
+  
+      import: true
+      
+  One issue with the current shell is the inconsistent ability to paste large terms into
+  the shell. Types such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
+  `IExHistory2` will attempt to recognize and parse such terms during evaluation. 
+  
+  Currently process ids, references, anonymous functions, ports and `#Ecto.Schema.Metadata` are 
+  supported by default. Additional terms can be added:
+  
+      paste_eval_regex: ["#SpecialItem1", "#NewObject"]
+          
+  This toggle true/false for calls to `IExHistory2.*` (and imports) from been saved.
+        
+      hide_history_commands: true 
+      
+  If set to false, the default, commands that were evaluated incorrectly will not be saved.
+  
+      save_invalid_results: false 
+
+  If set to true will allow the user to scroll up (ctrl+u) or down (ctrl+k) through history.
+      
+      key_buffer_history: true
+      
+  Unlike the standard up/down arrow history where the up-arrow key has to be pressed multiple times to 
+  traverse a large term, `IExHistory2` only requires a single up/down key, and the entire term can then
+  be edited.
+  
+  The default navigation keys are defined above, but can be changed to any reasonable value. Please be aware
+  that certain key are reserved by the runtime and can not be used. The values should be set to decimal, the 
+  example below sets opening the editor from `ctrl^l` to `ctrl^e`
+  
+      navigation_keys: [editor: 5]
     
-`:hide_history_commands` This will prevent all calls to IExHistory2.* from been saved.
+  If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
-NOTE: `IExHistory2.x/1` is always hidden. Scope of `:global` will only hide them from output, otherwise they will not be saved.
-
-`:save_invalid_results` If set to false, the default, commands that were evaluated incorrectly will not be saved.
-
-`:key_buffer_history` If set to true will allow the user to scroll up `(ctrl+u)` or down `(ctrl+k)` through history. Unlike the standard up/down arrow history this is command based not line based. So pasting of a large structure will only require 1 up or down. This mechanism also saves commands that were not properly evaluated; however there is a buffer limit of 75 lines, although this can be changed by updating `@history_buffer_size` in `events_server.ex`. This will also not duplicate back to back identical commands.
-
-`:prepend_identifiers`  If this is enabled it will prepend identifiers when a call to `x = IExHistory2(val)` is issued.
+      prepend_identifiers: true
 
 For example:
 ```
@@ -357,12 +411,6 @@ If `scope` is `:global` history will be shared between all shells. However the s
 
 Furthermore, if a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
 
-```
-    export ERL_AFLAGS="-kernel shell_history enabled"
-
-    --erl "-kernel shell_history enabled"
-```
-
 ## Initialization
   
 ### Using `.iex.exs`
@@ -398,6 +446,4 @@ Add the configuration to your application `config/runtime.exs`. For example:
 When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
 ```  
       IExHistory2.initialize()
-```
-**NOTE:** `:scope` of `:global` is not fully complete.
-  
+```  

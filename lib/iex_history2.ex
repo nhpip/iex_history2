@@ -26,13 +26,13 @@ defmodule IExHistory2 do
   @moduledoc """
   Improved shell history with variable binding persistance.
 
-  * Saves shell history between sessions.
-  * Saves the shell variable bindings between VM restarts.
-  * Ability to paste (most) terms into the shell.
+  * Saves shell history between VM/shell restarts.
+  * Saves the shell variable bindings between VM/shell restarts.
+  * Ability to paste (most) terms into the shell (pids, references etc are handled)
   * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
   * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
   * Editing can be done in-situ or in a text editor.
-  * Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
+  * Shell variable bindings can be set/get outside of scope of the shell to assist in application debugging.
   * Can be enabled and state shared globally, or on individual shell sessions.
 
   See section on `Initialization` and `Configuration` below.
@@ -59,7 +59,7 @@ defmodule IExHistory2 do
       
       iex> hb()                     - show the current bindings.
       
-      iex> hi()                     - summary
+      iex> hi()                     - show summary / state
 
   **NOTE:** To use `he/1` the environment variable `EDITOR` must be set to point to your editor:
   
@@ -102,11 +102,10 @@ defmodule IExHistory2 do
       
       iex> IExHistory2.clear_bindings()
           
-  The functions `IExHistory2.add_binding/2` and `IExHistory2.get_binding/1` allows variables
-  to be set in a module that is invoked in the shell to be accessible in the shell and vice versa.
+  The functions `IExHistory2.add_binding/2` and `IExHistory2.get_binding/1` allows variables that
+  are bound in the shell to be accessible in an external module that has been loaded into the shell and vice versa.
       
-      defmodule VarTest do
-        
+      defmodule VarTest do      
         def get_me(val) do
           if IExHistory2.get_binding(:path_to_use) == :path1 do
             result = val + 100
@@ -118,7 +117,6 @@ defmodule IExHistory2 do
             result
           end
         end
-        
       end
           
       iex> path_to_use = :path1
@@ -135,50 +133,84 @@ defmodule IExHistory2 do
       iex> result_var
       %{path: :path2, result: 250}
 
+  The complimentary functions `add_binding/3` and `get_binding/2` that take a shell pid or registered name allowing
+  the user to debug applications.
+  
+      defmodule VarTest do
+        def get_me(val) do
+          if IExHistory2.get_binding(:path_to_use, :myshell) == :path1 do
+            result = val + 100
+            IExHistory2.add_binding(:result_var, %{path: :path1, result: result}, :myshell)
+            result
+          else
+            result = val + 200
+            IExHistory2.add_binding(:result_var, %{path: :path2, result: result}, :myshell)
+            result
+          end
+        end
+      end
+
+      iex> spawn(fn -> VarTest.get_me(100) end)
+      #PID<0.1557.0>
+      %{path: :path2, result: 300}
+      iex> result_var
+      %{path: :path2, result: 300}
+            
+  See also `IExHistory2.register/1`.
    
   ## Navigation
           
   The application uses a different set of keys for navigation, and attempts to present multi-line 
   terms and other items as a single line:
   
-      ctrl^u    - move up through history.
+      ctrl^u (21)   - move up through history.
       
-      ctrl^k    - move down through history.
+      ctrl^k (11)   - move down through history.
       
-      ctrl^y    - allows the currently displayed item to be modified.
+      ctrl^h (08)   - allows the currently displayed item to be modified.
       
-      ctrl^e    - opens the currently displayed item in an editor.
+      ctrl^l (12)   - opens the currently displayed item in an editor.
               
-      ctrl^[    - reset navigation, returns to the prompt.
+      ctrl^[ (27)   - reset navigation, returns to the prompt.
               
   **NOTE:** To use `ctrl^e` the environment variable `EDITOR` must be set to your editor:
 
   ## Configuration
     
-  The following options can be set either as a keyword list in `.iex.exs`.
+  The following options can be set either as a keyword list in `.iex.exs` (a sample file is 
+  included in the `github` repository):
 
       [
-        scope: :local,
-        history_limit: :infinity,
-        import: true,
-        hide_history_commands: true,
-        prepend_identifiers: true,
-        command_display_width: int,
-        save_invalid_results: false,
-        key_buffer_history: true,
-        paste_eval_regex: [],
-        show_date: true,
-        save_bindings: true,
         colors: [
           index: :red,
           date: :green,
           command: :yellow,
           label: :red,
-          variable: :green
-        ]
+          variable: :green,
+          binding: :cyan
+        ],
+        command_display_width: 150,
+        hide_history_commands: true,
+        history_limit: :infinity,
+        import: true,
+        key_buffer_history: true,
+        navigation_keys: [
+          up: 21,
+          down: 11,
+          editor: 12,
+          modify: 8,
+          abandon: 27,
+          enter: 13
+        ],
+        paste_eval_regex: ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"],
+        prepend_identifiers: true,
+        save_bindings: true,
+        save_invalid_results: false,
+        scope: :local,
+        show_date: true
       ]
 
-  Or in `config/runtime.exs` if using Mix:
+  Or in `config/runtime.exs`:
  
       config :your_app, IExHistory2,
         scope: :local,
@@ -193,10 +225,9 @@ defmodule IExHistory2 do
   
       import: true
       
-  One current issue with the current shell is the inconsistent ability to paste large terms into
-  the shell. Terms such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
-  The application will attempt to recognize such terms during evaluation, wrap them in quotes and attempt
-  to re-evaluate. 
+  One issue with the current shell is the inconsistent ability to paste large terms into
+  the shell. Types such as process ids and references (`#PID<0.1234.0>`) cause the evaluator to fail. 
+  `IExHistory2` will attempt to recognize and parse such terms during evaluation. 
   
   Currently process ids, references, anonymous functions, ports and `#Ecto.Schema.Metadata` are 
   supported by default. Additional terms can be added:
@@ -215,7 +246,15 @@ defmodule IExHistory2 do
       
       key_buffer_history: true
       
-  Unlike the standard up/down arrow history this is command based not line based. So pasting of a large term or source code will only require 1 up or down key.
+  Unlike the standard up/down arrow history where the up-arrow key has to be pressed multiple times to 
+  traverse a large term, `IExHistory2` only requires a single up/down key, and the entire term can then
+  be edited.
+  
+  The default navigation keys are defined above, but can be changed to any reasonable value. Please be aware
+  that certain key are reserved by the runtime and can not be used. The values should be set to decimal, the 
+  example below sets opening the editor from `ctrl^l` to `ctrl^e`
+  
+      navigation_keys: [editor: 5]
     
   If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
@@ -256,17 +295,11 @@ defmodule IExHistory2 do
 
   `scope:` can be one of `:local, :global `or a `node name`
 
-  * `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique
+  * `:local` (the default) history will be active on all shells, even those that are remotely connected, but the history for each shell will be unique.
 
-  * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell
+  * `node_name`i.e. (e.g. `:mgr@localhost`) history will only be active on that shell.
 
-  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled along with the date/time in history
-
-  If a `scope` of `:global` is selected following kernel option must be set, either directly as VM options or via an environment variable:
-
-      export ERL_AFLAGS="-kernel shell_history enabled"
-
-      --erl "-kernel shell_history enabled"
+  * `:global` history will be shared between all shells. However the saving of variable bindings will be disabled.
 
   ## Initialization
   
@@ -284,11 +317,11 @@ defmodule IExHistory2 do
    
   Add to `mix.exs` as a dependency: 
   
-      {:iex_history2, "~> 5.2"}
+      {:iex_history2, "~> 5.3"}
   
   Or:
   
-      {:iex_history2, github: "nhpip/iex_history2", tag: "5.2.0"},
+      {:iex_history2, github: "nhpip/iex_history2", tag: "5.3.0"},
           
   Add the configuration to your application `config/runtime.exs`. For example:
   
@@ -303,12 +336,10 @@ defmodule IExHistory2 do
   When you connect your shell call `IExHistory2.initialize/0` (in `.iex.exs` or as a standalone call):
   
       IExHistory2.initialize()
-
-  **NOTE:** `:scope` of `:global` is not fully complete.
   
   """
 
-  @version "5.0"
+  @version "5.3"
   @module_name String.trim_leading(Atom.to_string(__MODULE__), "Elixir.")
   @exec_name String.trim_leading(Atom.to_string(__MODULE__) <> ".hx", "Elixir.")
 
@@ -325,6 +356,23 @@ defmodule IExHistory2 do
   
   @default_paste_eval_regex ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"]
   
+  @history_up_key 21 # ctrl+u
+  @history_down_key 11  # ctrl+k
+  @editor_key 12 # ctrl+l
+  @modify_key 08 # ctrl+h
+  @abandon_key 27 # ctrl+[ or esc(ape)
+  @enter_key 13
+  
+  @alive_prompt "%prefix(%node)%counter>"
+  @default_prompt "%prefix(%counter)>"
+  
+  @default_navigation_keys [up: @history_up_key,
+                            down: @history_down_key,
+                            editor: @editor_key,
+                            modify: @modify_key,
+                            abandon: @abandon_key,
+                            enter: @enter_key]
+  
   @default_width 150
   @default_colors [index: :red, date: :green, command: :yellow, label: :red, variable: :green, binding: :cyan]
   @default_config [
@@ -336,12 +384,17 @@ defmodule IExHistory2 do
     save_bindings: true,
     command_display_width: @default_width,
     paste_eval_regex: @default_paste_eval_regex,
+    navigation_keys: @default_navigation_keys,
     import: true,
     save_invalid_results: false,
     key_buffer_history: true,
     colors: @default_colors
   ]
 
+  alias IExHistory2.Events
+  alias IExHistory2.Bindings
+  alias IExHistory2.Events.Server
+  
   @doc """
   Initializes the IExHistory2 app. Takes the following parameters:
 
@@ -356,6 +409,7 @@ defmodule IExHistory2 do
       show_date: true,
       import: true,
       paste_eval_regex: [],
+      navigation_keys: [up: 21, down: 11, ...]
       save_bindings: true,
       colors: [
         index: :red,
@@ -372,7 +426,7 @@ defmodule IExHistory2 do
   """
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
-             |> Keyword.put_new(:scope, IExHistory2.Events.get_scope(config_or_filename)) 
+             |> Keyword.put_new(:scope, Events.get_scope(config_or_filename)) 
 
     if history_configured?(config) && not is_enabled?() do
       :dbg.stop()
@@ -382,12 +436,14 @@ defmodule IExHistory2 do
       if Keyword.get(new_config, :import),
         do: inject_command("import IExHistory2, only: #{inspect(@shell_imports)}")
 
-      IExHistory2.Events.initialize(new_config)
-      |> IExHistory2.Bindings.initialize()
+      Events.initialize(new_config)
       |> set_enabled()
       |> present_welcome()
+      |> finalize_startup()
     else
-      if is_enabled?(), do: :history_already_enabled, else: :history_disabled
+      if is_enabled?(), 
+        do: :history_already_enabled,
+        else: :history_disabled
     end
   end
   
@@ -401,7 +457,7 @@ defmodule IExHistory2 do
   def start_link(config) do
     init_save_config(config)
     |> Keyword.put(:running_mode, :supervisor)
-    |> IExHistory2.Events.initialize()
+    |> Events.initialize()
     |> Keyword.get(:events_server_pid)
   end
   
@@ -412,32 +468,80 @@ defmodule IExHistory2 do
         start: {__MODULE__, :start_link, [config]},
         type: Keyword.get(config, :type, :worker),
         restart: :permanent,
-        shutdown: 5090
+        shutdown: 5000
     }
+  end
+    
+  @doc false
+  def iex_parse("iex_history2_no_evaluation", _opts, buffer) do
+    receive do
+      {:history2, m} -> {:ok, m, buffer}
+    after 
+      0 -> {:ok, nil, buffer}
+    end 
+  end
+    
+  @doc false
+  def iex_parse(expr, opts, buffer) do
+    handle_iex_break(expr)  
+    try do 
+       case IEx.Evaluator.parse(expr, opts, buffer) do        
+        {:ok, {:def, _, _} = ast, _rsp} ->
+          set_prompts(:normal)
+          Server.iex_parse(Macro.to_string(ast))
+          |> iex_parse(opts, "")
+          
+        {:ok, ast, rsp} ->
+          Process.delete(:iex_history2_start)
+          set_prompts(:normal)
+          Server.save_expression(Macro.to_string(ast))
+          {:ok, ast, rsp}
+                    
+        {:incomplete, rsp} -> 
+          start_time = Process.get(:iex_history2_start, System.monotonic_time())
+          if System.convert_time_unit(System.monotonic_time() - start_time, :native, :millisecond) > 1000 do
+            set_prompts(:incomplete)
+            {:incomplete, rsp}
+          else   
+            Process.put(:iex_history2_start, System.monotonic_time())
+            set_prompts(:paste)
+            {:incomplete, rsp}
+          end
+      end  
+    rescue
+      e -> 
+        if Keyword.get(opts, :exception) && Keyword.get(opts, :last_expr) == expr && buffer == "" do
+          set_prompts(:normal)
+          reraise(e, __STACKTRACE__)
+        else   
+          opts = Keyword.delete(opts, :last_expr) 
+          |>  Keyword.delete(:exception)
+          set_prompts(:paste)
+          send_for_parsing(expr, buffer)
+          |> iex_parse([{:exception, true}, {:last_expr, expr} | opts], "")
+      end
+    end
   end
   
   @doc """
   Displays the current configuration.
   """
-  def configuration(), do: Process.get(:history_config, [])
-
+  def configuration() do
+    cfg = Process.get(:history_config, [])
+    nav_keys = Keyword.get(cfg, :navigation_keys)
+               |> Enum.map(fn {k, v} -> 
+                                <<nv::8>> = v
+                                {k, nv} 
+                  end)      
+    Keyword.put(cfg, :navigation_keys, nav_keys)
+    |> Keyword.delete(:compiled_paste_eval_regex)
+  end
+  
   @doc """
   Displays the default configuration.
   """
-  def default_config(), do: @default_config
-
-  @doc """
-  Displays the current state:
-
-      IExHistory2 version 2.0 is enabled:
-        Current history is 199 commands in size.
-        Current bindings are 153 variables in size.
-  """
-  def state() do
-    IO.puts("IExHistory2 version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
-    IO.puts("  #{IExHistory2.Events.state()}.")
-    IO.puts("  #{IExHistory2.Bindings.state()}.")
-  end
+  def default_config(),
+    do: @default_config
 
   @doc """
   Displays the entire history.
@@ -445,7 +549,7 @@ defmodule IExHistory2 do
   def hl() do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.get_history() end)
+    query_search(fn ->  Events.get_history() end)
   end
 
   @doc """
@@ -456,23 +560,26 @@ defmodule IExHistory2 do
   def hl(val) when val < 0 do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.get_history_item(val) end)
+    query_search(fn ->  Events.get_history_item(val) end)
   end
 
   def hl(val) when val > 0 do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.get_history_items(1, val) end)
+    query_search(fn ->  Events.get_history_items(1, val) end)
   end
 
   @doc """
-  Specify a range, the atoms :start and :stop can also be used.
+  Specify a range.
+  
+    iex> hl(10, 15)
+    
   """
   @spec hl(integer(), integer()) :: nil
   def hl(start, stop) do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.get_history_items(start, stop) end)
+    query_search(fn ->  Events.get_history_items(start, stop) end)
   end
 
   @doc """
@@ -484,7 +591,7 @@ defmodule IExHistory2 do
   def hs(match) do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.search_history_items(match, :exact) end)
+    query_search(fn ->  Events.search_history_items(match, :exact) end)
   end
 
   @doc """
@@ -496,7 +603,7 @@ defmodule IExHistory2 do
   def hsi(match) do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.search_history_items(match, :ignore_case) end)
+    query_search(fn ->  Events.search_history_items(match, :ignore_case) end)
   end
   
   @doc """
@@ -509,12 +616,21 @@ defmodule IExHistory2 do
   For large histories this command may take several seconds.
   
   The original expression does not need to be a string.
+  
+      iex> hsa("get_stte")
+      446: 92% 2024-02-04 23:27:16: :sys.get_state(Process.whereis(IExHistory2.Events.Server))
+      465: 92% 2024-02-05 00:57:04: :sys.get_state(Process.whereis(IExHistory2.Events.Server))
+      467: 92% 2024-02-05 00:57:38: :sys.get_state(Process.whereis(IExHistory2.Events.Server))
+      468: 92% 2024-02-05 00:58:25: :sys.get_state(Process.whereis(IExHistory2.Events.Server))
+      470: 92% 2024-02-05 00:59:17: :sys.get_state(Process.whereis(Server))
+      30: 83% 2024-02-03 20:22:41: :code.get_object_code(Types.UUID)
+
   """
   @spec hsa(String.t(), integer()) :: nil
   def hsa(match, closeness \\ 80) do
     is_enabled!()
 
-    query_search(fn ->  IExHistory2.Events.search_history_items(match, :approximate, closeness) end)
+    query_search(fn ->  Events.search_history_items(match, :approximate, closeness) end)
   end
   
   @doc """
@@ -525,7 +641,7 @@ defmodule IExHistory2 do
     is_enabled!()
 
     try do
-      IExHistory2.Events.execute_history_item(i)
+      Events.execute_history_item(i)
     catch
       _, {:badmatch, nil} -> {:error, :not_found}
       :error, %CompileError{description: descr} -> {:error, descr}
@@ -540,24 +656,28 @@ defmodule IExHistory2 do
   def hc(i) do
     is_enabled!()
     
-    query_search(fn -> IExHistory2.Events.copy_paste_history_item(i) end)
+    query_search(fn -> Events.copy_paste_history_item(i) end)
   end
 
   @spec he(integer()) :: any()
   def he(i) do
     is_enabled!()
 
-     query_search(fn ->  IExHistory2.Events.edit_history_item(i) end)
+     query_search(fn ->  Events.edit_history_item(i) end)
   end
 
   @doc """
   Show the variable bindings.
   """
   def hb(),
-    do: IExHistory2.Bindings.display_bindings()
+    do: Bindings.display_bindings()
 
   @doc """
-  Show history information summary.
+  Displays the current state:
+
+      IExHistory2 version 5.3 is enabled:
+        Current history is 199 commands in size.
+        Current bindings are 153 variables in size.
   """
   def hi(),
     do: state()
@@ -585,8 +705,8 @@ defmodule IExHistory2 do
     the IEx session needs restarting for the changes to take effect.
   """
   def clear() do
-    IExHistory2.Events.clear()
-    IExHistory2.Bindings.clear()
+    Events.clear()
+    Bindings.clear()
 
     if IExHistory2.configuration(:scope, :local) == :global,
       do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
@@ -600,7 +720,7 @@ defmodule IExHistory2 do
   entries from start, otherwise the entire history is cleared.
   """
   def clear_history(val \\ :all) do
-    IExHistory2.Events.clear_history(val)
+    Events.clear_history(val)
 
     if IExHistory2.configuration(:scope, :local) == :global && val == :all,
       do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
@@ -612,7 +732,7 @@ defmodule IExHistory2 do
   Clears the bindings.
   """
   def clear_bindings() do
-    IExHistory2.Bindings.clear()
+    Bindings.clear()
     :ok
   end
 
@@ -620,8 +740,8 @@ defmodule IExHistory2 do
   Clears the history and bindings then stops the service. If `scope` is ` :global` the IEx session needs restarting for the changes to take effect.
   """
   def stop_clear() do
-    IExHistory2.Events.stop_clear()
-    IExHistory2.Bindings.stop_clear()
+    Events.stop_clear()
+    Bindings.stop_clear()
 
     if IExHistory2.configuration(:scope, :local) == :global,
       do: IO.puts("\n#{IO.ANSI.green()}Please restart your shell session for the changes to take effect")
@@ -637,16 +757,18 @@ defmodule IExHistory2 do
   end
 
   @doc """
-  Returns the current shell bindings.
+  Returns the current shell bindings as a keyword list.
   """
   def get_bindings() do
-    IExHistory2.Bindings.get_bindings()
+    Bindings.get_bindings()
   end
 
   @doc """
-  This helper function can be used when testing code (for example a module pasted into the shell).
-  It allows a variable that is set in the shell to be available in a module under test. For example:
+  The functions `IExHistory2.add_binding/2` and `IExHistory2.get_binding/1` allows variables that
+  are bound in the shell to be accessible in a module and vice-versa.
   
+  In this example the module was pasted into the shell.
+   
       defmodule VarTest do
         def get_me(val) do
           if IExHistory2.get_binding(:path_to_use) == :path1 do
@@ -675,33 +797,55 @@ defmodule IExHistory2 do
 
   def get_binding(var) do
     try do
-      IExHistory2.Bindings.get_binding(var)
+      Bindings.get_binding(var)
     rescue
     _ -> raise("undefined variable #{var}")  
     end
   end
   
   @doc """
-  Experimental. Same as `get_binding/2`, but `name` is the registered name of a shell pid.
+  Same as `get_binding/2`, but `name` is the registered name of your shell. Useful 
+  for debugging applications.
   
-  See `register/1`
+      defmodule VarTest do
+        def get_me(val) do
+          if IExHistory2.get_binding(:path_to_use, :myshell) == :path1 do
+            result = val + 100
+            IExHistory2.add_binding(:result_var, %{path: :path1, result: result}, :myshell)
+            result
+          else
+            result = val + 200
+            IExHistory2.add_binding(:result_var, %{path: :path2, result: result}, :myshell)
+            result
+          end
+        end
+      end
+
+      iex> IExHistory2.register(:myshell)
+      true
+      iex> spawn(fn -> VarTest.get_me(100) end)
+      #PID<0.1557.0>
+      %{path: :path2, result: 300}
+      iex> result_var
+      %{path: :path2, result: 300}
+            
+  See also `IExHistory2.register/1`.
   """
-  @spec get_binding(atom() | String.t(), atom()) :: any()  
+  @spec get_binding(atom() | String.t(), atom() | pid()) :: any()  
   def get_binding(var, name) when is_bitstring(var) do
     get_binding(String.to_atom(var), name)
   end
   
   def get_binding(var, name) do
     try do
-      IExHistory2.Bindings.get_binding(var, name)
+      Bindings.get_binding(var, name)
     rescue
     _ -> raise("undefined variable #{var}")  
     end
   end
   
   @doc """
-  This helper function can be used when testing code (for example a module pasted into the shell).
-  It allows a variable to be set that will become available in the shell. For example:
+  See `IExHistory2.get_binding/1`.
   
       defmodule VarTest do
         def set_me(var) do
@@ -725,11 +869,11 @@ defmodule IExHistory2 do
   end
   
   @doc """
-  Experimental. Same as `add_binding/2`, but `name` is the registered name of a shell pid.
+  Same as `add_binding/2`, but `name` is the registered name of a shell.
   
-  See `register/1`
+  See also `register/1` and `get_binding/2`
   """
-  @spec add_binding(atom() | String.t(), any(), atom()) :: :ok
+  @spec add_binding(atom() | String.t(), any(), atom() | pid()) :: :ok
   def add_binding(var, value, name) do
     inject_command("#{var} = #{inspect(value, limit: :infinity, printable_limit: :infinity)}", name)
     value
@@ -764,14 +908,14 @@ defmodule IExHistory2 do
   @doc """
   Unbinds a variable or list of variables (specify variables as atoms, e.g. foo becomes :foo).
   """
-  def unbind(vars) when is_list(vars), do: IExHistory2.Bindings.unbind(vars)
+  def unbind(vars) when is_list(vars), do: Bindings.unbind(vars)
   def unbind(var), do: unbind([var])
 
   @doc """
   Saves the current configuration to file.
   """
   def save_config(filename) do
-    data = :io_lib.format("~p.", [configuration()]) |> List.flatten()
+    data = :io_lib.format("~p.", [raw_configuration()]) |> List.flatten()
     :file.write_file(filename, data)
   end
 
@@ -792,7 +936,6 @@ defmodule IExHistory2 do
       :history_limit
       :hide_history_commands,
       :prepend_identifiers,
-      :save_bindings,
       :command_display_width,
       :save_invalid_results,
       :key_buffer_history,
@@ -819,54 +962,38 @@ defmodule IExHistory2 do
 
   def configure(:hide_history_commands, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :hide_history_commands, 0, {:hide_history_commands, value})
-    IExHistory2.Events.send_message({:hide_history_commands, value})
+    Events.send_message({:hide_history_commands, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:key_buffer_history, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :key_buffer_history, 0, {:key_buffer_history, value})
-    IExHistory2.Events.send_message({:key_buffer_history, value})
+    Events.send_message({:key_buffer_history, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:save_invalid_results, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :save_invalid_results, 0, {:save_invalid_results, value})
-    IExHistory2.Events.send_message({:save_invalid_results, value})
+    Events.send_message({:save_invalid_results, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:prepend_identifiers, value) when value in [true, false] do
     new_config = List.keyreplace(configuration(), :prepend_identifiers, 0, {:prepend_identifiers, value})
-    IExHistory2.Events.send_message({:prepend_identifiers, value})
+    Events.send_message({:prepend_identifiers, value})
     Process.put(:history_config, new_config)
     configuration()
   end
 
   def configure(:history_limit, value) when is_integer(value) or value == :infinity do
     new_config = List.keyreplace(configuration(), :history_limit, 0, {:history_limit, value})
-    new_value = if value == :infinity, do: IExHistory2.Events.infinity_limit(), else: value
-    IExHistory2.Events.send_message({:new_history_limit, new_value})
+    new_value = if value == :infinity, do: Events.infinity_limit(), else: value
+    Events.send_message({:new_history_limit, new_value})
     Process.put(:history_config, new_config)
     configuration()
-  end
-
-  def configure(:save_bindings, value) when value in [true, false] do
-    if configuration(:scope, :local) != :global do
-      current_value = configuration(:save_bindings, true)
-      new_config = List.keyreplace(configuration(), :save_bindings, 0, {:save_bindings, value})
-
-      if current_value == true,
-        do: IExHistory2.Bindings.stop_clear(),
-        else: IExHistory2.Bindings.initialize(new_config)
-
-      Process.put(:history_config, new_config)
-      configuration()
-    else
-      {:error, :scope_is_global}
-    end
   end
 
   def configure(:colors, keyword_list) do
@@ -887,13 +1014,24 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def my_real_node(), do: :erlang.node(Process.group_leader())
+  def state() do
+    IO.puts("IExHistory2 version #{IO.ANSI.red()}#{@version}#{IO.ANSI.white()} is enabled:")
+    IO.puts("  #{Events.state()}.")
+    IO.puts("  #{Bindings.state()}.")
+  end
+  
+  @doc false
+  def my_real_node() do
+    Kernel.node(Process.group_leader())
+  end
+  
+  @doc false
+  def module_name(),
+    do: @module_name
 
   @doc false
-  def module_name(), do: @module_name
-
-  @doc false
-  def exec_name(), do: @exec_name
+  def exec_name(),
+    do: @exec_name
 
   @doc false
   def exclude_from_history() do
@@ -901,24 +1039,29 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def configuration(item, default), do: Keyword.get(configuration(), item, default)
-
+  def configuration(item, default) do
+    Keyword.get(configuration(), item, default)
+  end
+  
   @doc false
   def persistence_mode(:local) do
     my_node = my_real_node()
-    {:ok, true, :local, my_node}
+    %{init: true, scope: :local, node: my_node}
   end
 
   @doc false
-  def persistence_mode(:global), do: {:ok, true, :global, :no_node}
-
+  def persistence_mode(:global) do 
+    my_node = node()
+    %{init: true, scope: :global, node: my_node}
+  end
+  
   @doc false
   def persistence_mode(node) when is_atom(node) do
     my_node = my_real_node()
 
     if my_node == node,
-      do: {:ok, true, :local, my_node},
-      else: {:ok, false, :no_label, :no_node}
+      do: %{init: true, scope: :local, node: my_node},
+      else: %{init: false, scope: :no_label, node: :no_node}
   end
 
   @doc false
@@ -927,11 +1070,35 @@ defmodule IExHistory2 do
   end
 
   @doc false
-  def persistence_mode(_), do: {:ok, false, :no_label, :no_node}
-
+  def persistence_mode(_) do
+    %{init: false, scope: :no_label, node: :no_node}
+  end
+  
   @doc false
-  def inject_command(command, name \\ nil), do: IExHistory2.Bindings.inject_command(command, name)
-
+  def raw_configuration() do
+    Process.get(:history_config, [])
+  end
+  
+  @doc false
+  def inject_command(command, name \\ nil) do
+     Bindings.inject_command(command, name)
+  end
+  
+  defp handle_iex_break(expr) do
+    if String.contains?(expr, "#iex:break") do
+      set_prompts(:normal)
+      raise("break")
+    end 
+  end
+    
+  defp send_for_parsing(expr, {bin, _}) do
+    Server.iex_parse(bin  <> expr)  
+  end
+  
+  defp send_for_parsing(expr, bin) do
+    Server.iex_parse(bin  <> expr)  
+  end
+    
   defp query_search(fun) do
     try do
       fun.()
@@ -957,10 +1124,11 @@ defmodule IExHistory2 do
   defp do_load_config(config), do: config
 
   defp init_save_config(config) do
-    infinity_limit = IExHistory2.Events.infinity_limit()
+    infinity_limit = Events.infinity_limit()
     colors = Keyword.get(config, :colors, @default_colors)
     new_colors = Enum.map(@default_colors, fn {key, default} -> {key, Keyword.get(colors, key, default)} end)
     custom_regex = Keyword.get(config, :paste_eval_regex, [])
+    new_keys = Keyword.get(config, :navigation_keys, @default_navigation_keys)
     config = Keyword.delete(config, :colors)
 
     new_config =
@@ -970,29 +1138,30 @@ defmodule IExHistory2 do
           {:colors, _} -> {:colors, Keyword.get(config, :colors, new_colors)}
           {:limit, current} when current > infinity_limit -> {:limit, Keyword.get(config, :limit, infinity_limit)}
           {:paste_eval_regex, regex} -> compile_regex(regex ++ custom_regex)
+          {:navigation_keys, keys} -> {:navigation_keys, make_navigation_keys(keys, new_keys)}
           {key, default} -> {key, Keyword.get(config, key, default)}
         end
       ) |> List.flatten()
             
-    if Keyword.get(new_config, :scope, :local) == :global do
-      newer_config = List.keyreplace(new_config, :save_bindings, 0, {:save_bindings, false})
-      Process.put(:history_config, newer_config)
-      newer_config
-    else
-      Process.put(:history_config, new_config)
-      new_config
-    end
+    Process.put(:history_config, new_config)
+    new_config
+  end
+  
+  defp make_navigation_keys(keys, new_keys) do
+    Keyword.merge(keys, new_keys)
+    |> Enum.map(fn {k, v} -> {k, <<v>>} end)
   end
 
   defp compile_regex(regex) do
-    compiled = Enum.uniq(regex) |> Enum.map(&Regex.compile!("#{&1}<(.*)>"))  
-    [{:compiled_paste_eval_regex, compiled}, {:paste_eval_regex, regex}]
+    match = Enum.uniq(regex) |> Enum.map(&Regex.compile!("#{&1}<(.*)>")) 
+    no_match = Enum.uniq(regex) |> Enum.map(&Regex.compile!("\"#{&1}<(.*)>\""))   
+    [{:compiled_paste_eval_regex, %{match: match, no_match: no_match}}, {:paste_eval_regex, regex}]
   end
   
   defp history_configured?(config) do
     scope = Keyword.get(config, :scope, :local)
 
-    if IExHistory2.Events.does_current_scope_match?(scope) do
+    if Events.does_current_scope_match?(scope) do
       my_node = my_real_node()
 
       if my_node == scope || scope in [:global, :local],
@@ -1005,10 +1174,43 @@ defmodule IExHistory2 do
 
   defp present_welcome(:not_ok), do: :ok
 
-  defp present_welcome(_), do: inject_command("IExHistory2.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
-
+  defp present_welcome(config) do 
+    inject_command("IExHistory2.state(); IEx.configure(colors: [syntax_colors: [atom: :cyan]])")
+    config
+  end
+  
   defp set_enabled(config) do
     Process.put(:history_is_enabled, true)
     config
   end
+  
+  defp finalize_startup(config) do
+    Process.put(:alive_prompt, IEx.Config.alive_prompt)
+    Process.put(:default_prompt, IEx.Config.default_prompt)
+    IEx.configure(parser: {__MODULE__, :iex_parse, []})
+    Server.enable()
+    if Keyword.get(config, :running_mode) == :supervisor,
+      do: config,
+      else: :ok
+  end
+    
+  defp set_prompts(:paste) do
+    Process.put(:iex_paste_mode, true)
+    IEx.configure(alive_prompt: "  ")
+    IEx.configure(default_prompt: "  ")
+  end
+  
+  defp set_prompts(:incomplete) do
+    IEx.configure(alive_prompt: "incomplete>>")
+    IEx.configure(default_prompt: "incomplete>>")
+  end
+  
+  defp set_prompts(_) do
+    if Process.get(:iex_paste_mode, false) do
+      IEx.configure(alive_prompt: Process.get(:alive_prompt, @alive_prompt))
+      IEx.configure(default_prompt: Process.get(:default_prompt, @default_prompt))
+      Process.delete(:iex_paste_mode)
+    end
+  end
+  
 end
