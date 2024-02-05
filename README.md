@@ -186,7 +186,7 @@ the shell. For example:
 ```
 The variable can be represented as an atom or string.
 
-### IExHistory2.add_binding/2
+### IExHistory2.get_binding/1
 The inverse of `add_binding/2`
 It allows a variable that is set in the shell to be available in a module under test. For example:
 ```
@@ -208,9 +208,30 @@ It allows a variable that is set in the shell to be available in a module under 
     :path2
     iex> VarTest.get_me(50)
 ```
+The complimentary functions `add_binding/3` and `get_binding/2` that take a shell pid or registered name allowing
+the user to debug applications.
+```
+  defmodule VarTest do
+    def get_me(val) do
+      if IExHistory2.get_binding(:path_to_use, :myshell) == :path1 do
+        result = val + 100
+        IExHistory2.add_binding(:result_var, %{path: :path1, result: result}, :myshell)
+        result
+      else
+        result = val + 200
+        IExHistory2.add_binding(:result_var, %{path: :path2, result: result}, :myshell)
+        result
+      end
+    end
+  end
 
-Experimental varients of `add_binding/2` and get_binding/1` exist that takes an atom that
-is the registered name of a shell process identifier.
+  iex> spawn(fn -> VarTest.get_me(100) end)
+  #PID<0.1557.0>
+  %{path: :path2, result: 300}
+  iex> result_var
+  %{path: :path2, result: 300}
+```            
+See also `IExHistory2.register/1`.
 
 ## Misc Functions
 
