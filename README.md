@@ -7,7 +7,7 @@ Improved shell history with variable binding persistance.
 * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
 * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
 * Editing can be done in-situ or in a text editor.
-* Shell variable bindings can be set/get outside of scope of the shell to assist in code debugging.
+* Shell variable bindings can be set/get outside of scope of the shell to assist in application debugging.
 * Can be enabled and state shared globally, or on individual shell sessions.
 
 See section on `Configuration` and `Initialization` to get started.
