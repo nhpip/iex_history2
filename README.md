@@ -1,8 +1,8 @@
 # iex_history2 
 Improved shell history with variable binding persistance.
 
-* Saves shell history between sessions.
-* Saves the shell variable bindings between VM restarts.
+* Saves shell history between VM/shell.
+* Saves the shell variable bindings between VM/shell restarts.
 * Ability to paste (most) terms into the shell.
 * Navigation keys allow history traversal where multi-line pastes require a single key up/down.
 * Shortcut functions permit search, pasting, re-evaluation and editing of items in history.
