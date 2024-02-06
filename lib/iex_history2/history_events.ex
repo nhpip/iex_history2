@@ -401,7 +401,7 @@ defmodule IExHistory2.Events do
                            :save_invalid_results, :key_buffer_history, :navigation_keys, 
                            :compiled_paste_eval_regex, :paste_eval_regex, :running_mode,
                            :import]) 
-     |> Enum.into(%{store_count: 0, limit: real_limit})
+     |> Enum.into(%{store_count: 0, limit: real_limit, solo_functions: %{}})
      |> Server.start_link()
   end
 

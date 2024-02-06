@@ -424,6 +424,7 @@ defmodule IExHistory2 do
 
   `scope` can be one of `:local, :global` or a `node()` name
   """
+  @spec initialize(list()) :: list() | atom()
   def initialize(config_or_filename \\ []) do
     config = do_load_config(config_or_filename)
              |> Keyword.put_new(:scope, Events.get_scope(config_or_filename)) 
@@ -447,6 +448,11 @@ defmodule IExHistory2 do
     end
   end
   
+  @spec start(list()) :: {:ok, pid()}
+  def start(config \\ default_config()) do 
+    IExHistory2.Supervisor.start_link(config)
+  end
+
   @doc false
   def start(_, _) do 
     Application.get_all_env(:iex_history2)

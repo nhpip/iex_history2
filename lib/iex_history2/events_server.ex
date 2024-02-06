@@ -125,8 +125,9 @@ defmodule IExHistory2.Events.Server do
     {:ok, %{process_info | navigation_keys: Enum.into(nav_keys, %{})}}
   end
 
-  def handle_call({:iex_parse, expr}, _from, %{compiled_paste_eval_regex: regex} = process_info) do
-    {:reply, make_term_pasteable(expr, regex), process_info}
+  def handle_call({:iex_parse, expr}, _from, process_info) do
+    {parsed_expr, process_info} = make_term_pasteable(expr, process_info)
+    {:reply, parsed_expr, process_info}
   end 
   
   def handle_call({:clear, shell_pid}, _from, process_info) do
@@ -311,9 +312,9 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, %{compiled_paste_eval_regex: regex} = process_info) do
+  def handle_info({:trace, server_pid, :receive, {_, {:editor_data, data}}}, process_info) do
     manage_tracing(server_pid, false, :editor)
-    data = make_term_pasteable(data, regex)
+    {data, process_info} = make_term_pasteable(data, process_info)
     Enum.find(
       process_info,
       fn
@@ -646,12 +647,16 @@ defmodule IExHistory2.Events.Server do
     %{shell_config | queue: {search_pos, queue}, last_direction: :none, last_scan_command: command}
   end
 
-  defp do_handle_cursor_action(search_pos, %{queue: {_, queue}} = shell_config, :up) do
+  defp do_handle_cursor_action(search_pos, %{queue: {pos, queue}} = shell_config, :up) when pos < length(queue)-1 do
     command = Enum.at(queue, search_pos)
     send_to_shell(shell_config, command, :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :up, last_scan_command: command}
   end
 
+  defp do_handle_cursor_action(_, shell_config, _) do
+    shell_config
+  end
+  
   defp get_search_position(_, _size, :none, :up), do: 0
   defp get_search_position(_, _size, :none, :down), do: 0
 
@@ -702,13 +707,13 @@ defmodule IExHistory2.Events.Server do
     0
   end
   
-  defp make_term_pasteable(data, %{match: match} = regex) do
+  defp make_term_pasteable(data, %{compiled_paste_eval_regex: %{match: match} = regex} = process_info) do
     data = to_string(data)
     if term_needs_fixing?(data, match) do
       replace_special_terms(data, regex)
-      |> handle_solo_functions()
+      |> handle_solo_functions(process_info)
     else
-      handle_solo_functions(data) 
+      handle_solo_functions(data, process_info) 
     end  
   end
     
@@ -723,12 +728,13 @@ defmodule IExHistory2.Events.Server do
     end)   
   end
   
-  defp handle_solo_functions(data) do
+  defp handle_solo_functions(data, %{solo_functions: solo_functions} = process_info) do
     if String.starts_with?(String.trim_leading(data), "def ") && not String.contains?(data, "defmodule") do
-      module = random_module()  
-      "defmodule #{module} do\n #{data}\n end\nimport #{module}\n:ok"
+      {module, solo_functions} = make_solo_function_module(data, solo_functions)  
+      eval_str = "defmodule #{module} do\n #{data}\n end\nimport #{module}\n:ok"
+      {eval_str, %{process_info | solo_functions: solo_functions}}
     else
-      data
+      {data, process_info}
     end    
   end  
     
@@ -757,11 +763,23 @@ defmodule IExHistory2.Events.Server do
     end  
   end 
     
-  defp random_module() do
+  defp make_solo_function_module(data, solo_functions) do
     rand = Enum.map_join(1..5, "", fn _ -> Enum.random(@codepoints) end) 
-    "IExHistory2.Random#{rand}XXX"
+    find_existing_module(data, "IExHistory2.Random#{rand}XXX", solo_functions)
   end
 
+  defp find_existing_module(fun_string, new_module, solo_functions) do
+    case Code.string_to_quoted(fun_string) do
+      {:ok, {:def, _, [{fun, _, args} | _]}} ->
+        key = {Atom.to_string(fun), Enum.count(args)} 
+        Map.get_and_update(solo_functions, key, fn 
+                  mod -> if not is_nil(mod), do: {mod, mod}, else: {new_module, new_module}  
+        end)
+      _ ->
+        {new_module, solo_functions}     
+    end  
+  end
+  
   defp save_traced_command(command, shell_pid, process_info) do
      do_save_traced_command(String.trim(command), shell_pid, process_info)
   end
