@@ -1118,7 +1118,7 @@ defmodule IExHistory2 do
   end
   
   defp do_load_config(app) when is_atom(app) do
-    Application.get_env(:collection_server, __MODULE__, [])
+    Application.get_env(app, __MODULE__, [])
   end
   
   defp do_load_config(config), do: config
