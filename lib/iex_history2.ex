@@ -82,7 +82,7 @@ defmodule IExHistory2 do
               
   ### Text Editor
   
-  To use `ctrl^e` the environment variable `EDITOR` must be set to your editor:
+  To use `ctrl^e` the environment variable `EDITOR` must be set to your editor of choice:
   
       export EDITOR=vim
   
@@ -107,7 +107,7 @@ defmodule IExHistory2 do
       ERL_FLAGS='-config $HOME/.erlang_keymap.config'
   ``` 
      
-  3. Add the following to the `IExHistory2` configuration:
+  3. Add the following to `IExHistory2` configuration:
   ```
       standard_arrow_keys: true
   ```  
@@ -115,6 +115,8 @@ defmodule IExHistory2 do
   ```  
       IExHistory2.initialize(standard_arrow_keys: true, ....)
   ```        
+  
+  4. Restart your VM
          
   ## Examples
  
@@ -291,7 +293,7 @@ defmodule IExHistory2 do
   
       navigation_keys: [editor: 5]
     
-  To use standard up/down arrow keys set:
+  To use standard up/down arrow keys (see `Navigation Keys` above) set:
   
       standard_arrow_keys: true
     
