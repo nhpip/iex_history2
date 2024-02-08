@@ -664,7 +664,7 @@ defmodule IExHistory2.Events.Server do
     %{shell_config | queue: {search_pos, queue}, last_direction: :none, last_scan_command: command}
   end
 
-  defp do_handle_cursor_action(search_pos, %{queue: {pos, queue}} = shell_config, :up) when pos < length(queue)-1 do
+  defp do_handle_cursor_action(search_pos, %{queue: {pos, queue}} = shell_config, :up) when pos < (length(queue) - 1) do
     command = Enum.at(queue, search_pos)
     send_to_shell(shell_config, command, :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :up, last_scan_command: command}
@@ -789,8 +789,9 @@ defmodule IExHistory2.Events.Server do
     case Code.string_to_quoted(fun_string) do
       {:ok, {:def, _, [{fun, _, args} | _]}} ->
         key = {Atom.to_string(fun), Enum.count(args)} 
-        Map.get_and_update(solo_functions, key, fn 
-                  mod -> if not is_nil(mod), do: {mod, mod}, else: {new_module, new_module}  
+        Map.get_and_update(solo_functions, key,
+               fn mod when not is_nil(mod) -> {mod, mod} 
+                  _ -> {new_module, new_module}  
         end)
       _ ->
         {new_module, solo_functions}     

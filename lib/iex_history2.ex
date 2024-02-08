@@ -82,7 +82,7 @@ defmodule IExHistory2 do
               
   ### Text Editor
   
-  To use `ctrl^e` the environment variable `EDITOR` must be set to your editor of choice:
+  To use `ctrl^l` the environment variable `EDITOR` must be set to your editor of choice:
   
       export EDITOR=vim
   
@@ -580,9 +580,9 @@ defmodule IExHistory2 do
   def configuration() do
     cfg = Process.get(:history_config, [])
     nav_keys = Keyword.get(cfg, :navigation_keys, [])
-               |> Enum.map(fn {k, v} when is_bitstring(v)-> 
-                                  {k, to_string(v)} 
-                               kv -> kv
+               |> Enum.map(fn 
+                      {k, v} when is_bitstring(v ) -> {k, to_string(v)} 
+                      kv -> kv
                   end)      
     Keyword.put(cfg, :navigation_keys, nav_keys)
     |> Keyword.delete(:compiled_paste_eval_regex)
@@ -1203,7 +1203,9 @@ defmodule IExHistory2 do
   
   defp make_navigation_keys(keys, new_keys) do
     Keyword.merge(keys, new_keys)
-    |> Enum.map(fn {k, v} when is_integer(v) -> {k, <<v>>}; x -> x end)
+    |> Enum.map(fn {k, v} when is_integer(v) -> {k, <<v>>}
+                    kv -> kv
+       end)
   end
 
   defp compile_regex(regex) do
