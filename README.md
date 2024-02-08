@@ -25,11 +25,44 @@ The default navigation keys are defined below. They can however be configured to
 
     ctrl^[    - Reset navigation, returns to the prompt.
 ```
-NOTE: To use `ctrl^l` the environment variable EDITOR must be set to point to your editor:
+### Text Editor
+To use `ctrl^l` the environment variable EDITOR must be set to point to your editor:
 ```
     export EDITOR="vim"
 ```
 
+### Standard Arrow Keys
+  
+If you want to use the regular up / down arrow (and backspace) keys:
+  
+1. Create the following file in your `HOME` directory:
+```
+    ~/.erlang_keymap.config
+```
+```
+    [{stdlib,
+      [{shell_keymap,
+        \#{ normal => \#{ "\\e\[A" => none, "\\e\[B" => none } }
+      }]
+    }].
+```
+  
+2. Set the following environment variable:
+```
+   ERL_FLAGS='-config $HOME/.erlang_keymap.config'
+``` 
+     
+3. Add the following to `IExHistory2` configuration:
+```
+    standard_arrow_keys: true
+```  
+or   
+```  
+    IExHistory2.initialize(standard_arrow_keys: true, ....)
+```        
+  
+4. Restart your VM
+         
 ## Shortcut Search and Edit Functions
 Key history navigation functions are automatically imported into the shell.
 ```

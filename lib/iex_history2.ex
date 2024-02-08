@@ -65,7 +65,60 @@ defmodule IExHistory2 do
   
       export EDITOR="vim"
 
-  ### Examples
+  ## Navigation Keys
+          
+  The application uses a different set of keys for navigation, and attempts to present multi-line 
+  terms and other items as a single line:
+  
+      ctrl^u (21)   - move up through history (see below).
+      
+      ctrl^k (11)   - move down through history (see below).
+      
+      ctrl^h (08)   - allows the currently displayed item to be modified.
+      
+      ctrl^l (12)   - opens the currently displayed item in an editor.
+              
+      ctrl^[ (27)   - reset navigation, returns to the prompt.
+              
+  ### Text Editor
+  
+  To use `ctrl^l` the environment variable `EDITOR` must be set to your editor of choice:
+  
+      export EDITOR=vim
+  
+  ### Standard Arrow Keys
+  
+  If you want to use the regular up / down arrow (and backspace) keys:
+  
+  1. Create the following file in your `HOME` directory:
+  ```
+      ~/.erlang_keymap.config
+  ```
+  ```
+      [{stdlib,
+        [{shell_keymap,
+          \#{ normal => \#{ "\\e\[A" => none, "\\e\[B" => none } }
+        }]
+      }].
+  ```
+  
+  2. Set the following environment variable:
+  ```
+      ERL_FLAGS='-config $HOME/.erlang_keymap.config'
+  ``` 
+     
+  3. Add the following to `IExHistory2` configuration:
+  ```
+      standard_arrow_keys: true
+  ```  
+      or   
+  ```  
+      IExHistory2.initialize(standard_arrow_keys: true, ....)
+  ```        
+  
+  4. Restart your VM
+         
+  ## Examples
  
   Simple listing of last 9 items:
   
@@ -158,23 +211,6 @@ defmodule IExHistory2 do
             
   See also `IExHistory2.register/1`.
    
-  ## Navigation
-          
-  The application uses a different set of keys for navigation, and attempts to present multi-line 
-  terms and other items as a single line:
-  
-      ctrl^u (21)   - move up through history.
-      
-      ctrl^k (11)   - move down through history.
-      
-      ctrl^h (08)   - allows the currently displayed item to be modified.
-      
-      ctrl^l (12)   - opens the currently displayed item in an editor.
-              
-      ctrl^[ (27)   - reset navigation, returns to the prompt.
-              
-  **NOTE:** To use `ctrl^e` the environment variable `EDITOR` must be set to your editor:
-
   ## Configuration
     
   The following options can be set either as a keyword list in `.iex.exs` (a sample file is 
@@ -202,6 +238,7 @@ defmodule IExHistory2 do
           abandon: 27,
           enter: 13
         ],
+        standard_arrow_keys: false,
         paste_eval_regex: ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"],
         prepend_identifiers: true,
         save_bindings: true,
@@ -255,6 +292,10 @@ defmodule IExHistory2 do
   example below sets opening the editor from `ctrl^l` to `ctrl^e`
   
       navigation_keys: [editor: 5]
+    
+  To use standard up/down arrow keys (see `Navigation Keys` above) set:
+  
+      standard_arrow_keys: true
     
   If this is enabled it will prepend identifiers when a call to `x = hx(val)` is issued.
 
@@ -356,12 +397,14 @@ defmodule IExHistory2 do
   
   @default_paste_eval_regex ["#Reference", "#PID", "#Function", "#Ecto.Schema.Metadata", "#Port"]
   
-  @history_up_key 21 # ctrl+u
-  @history_down_key 11  # ctrl+k
+  @history_up_key 21 # ctrl+u (try "\e[A" if overriding default)
+  @history_down_key 11  # ctrl+k (try "\e[B" if overriding default)
   @editor_key 12 # ctrl+l
   @modify_key 08 # ctrl+h
   @abandon_key 27 # ctrl+[ or esc(ape)
   @enter_key 13
+  
+  @standard_arrow_keys [up: "\e[A", down: "\e[B", modify: "\d"]
   
   @alive_prompt "%prefix(%node)%counter>"
   @default_prompt "%prefix(%counter)>"
@@ -379,6 +422,7 @@ defmodule IExHistory2 do
     scope: :local,
     history_limit: :infinity,
     hide_history_commands: true,
+    standard_arrow_keys: false,
     prepend_identifiers: true,
     show_date: true,
     save_bindings: true,
@@ -409,7 +453,8 @@ defmodule IExHistory2 do
       show_date: true,
       import: true,
       paste_eval_regex: [],
-      navigation_keys: [up: 21, down: 11, ...]
+      navigation_keys: [up: 21, down: 11, ...],
+      standard_arrow_keys: false,
       save_bindings: true,
       colors: [
         index: :red,
@@ -534,10 +579,10 @@ defmodule IExHistory2 do
   """
   def configuration() do
     cfg = Process.get(:history_config, [])
-    nav_keys = Keyword.get(cfg, :navigation_keys)
-               |> Enum.map(fn {k, v} -> 
-                                <<nv::8>> = v
-                                {k, nv} 
+    nav_keys = Keyword.get(cfg, :navigation_keys, [])
+               |> Enum.map(fn 
+                      {k, v} when is_bitstring(v ) -> {k, to_string(v)} 
+                      kv -> kv
                   end)      
     Keyword.put(cfg, :navigation_keys, nav_keys)
     |> Keyword.delete(:compiled_paste_eval_regex)
@@ -1128,7 +1173,13 @@ defmodule IExHistory2 do
     colors = Keyword.get(config, :colors, @default_colors)
     new_colors = Enum.map(@default_colors, fn {key, default} -> {key, Keyword.get(colors, key, default)} end)
     custom_regex = Keyword.get(config, :paste_eval_regex, [])
-    new_keys = Keyword.get(config, :navigation_keys, @default_navigation_keys)
+    new_keys = 
+      if Keyword.get(config, :standard_arrow_keys, false) do
+        Keyword.get(config, :navigation_keys, @default_navigation_keys)
+        |> Keyword.merge(@standard_arrow_keys)
+      else
+        Keyword.get(config, :navigation_keys, @default_navigation_keys)        
+      end  
     config = Keyword.delete(config, :colors)
 
     new_config =
@@ -1142,14 +1193,19 @@ defmodule IExHistory2 do
           {key, default} -> {key, Keyword.get(config, key, default)}
         end
       ) |> List.flatten()
-            
+        
+    new_config = if Keyword.get(config, :show_unmapped_keys, false),
+        do: Keyword.put(new_config, :show_unmapped_keys, true),
+        else: new_config  
     Process.put(:history_config, new_config)
     new_config
   end
   
   defp make_navigation_keys(keys, new_keys) do
     Keyword.merge(keys, new_keys)
-    |> Enum.map(fn {k, v} -> {k, <<v>>} end)
+    |> Enum.map(fn {k, v} when is_integer(v) -> {k, <<v>>}
+                    kv -> kv
+       end)
   end
 
   defp compile_regex(regex) do

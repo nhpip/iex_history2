@@ -400,7 +400,7 @@ defmodule IExHistory2.Events do
      Keyword.take(config, [:scope, :hide_history_commands, :prepend_identifiers, 
                            :save_invalid_results, :key_buffer_history, :navigation_keys, 
                            :compiled_paste_eval_regex, :paste_eval_regex, :running_mode,
-                           :import]) 
+                           :import, :show_unmapped_keys]) 
      |> Enum.into(%{store_count: 0, limit: real_limit, solo_functions: %{}})
      |> Server.start_link()
   end

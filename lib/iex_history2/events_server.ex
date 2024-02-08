@@ -35,7 +35,8 @@ defmodule IExHistory2.Events.Server do
   @trace_pattern [{{:_, :_, {:_, {:"$1", :_}}}, [{:orelse, {:==, :"$1", :data}, {:==, :"$1", :editor_data}}], []}]
   @non_alphanumeric Regex.compile!("^[a-zA-Z0-9]+$")
   @start_regex Regex.compile!("defmodule IExHistory2.Random(.*)XX do")
-
+  @default_modify 08 # ctrl-h
+  
   use GenServer
   alias IExHistory2.Bindings
 
@@ -238,7 +239,8 @@ defmodule IExHistory2.Events.Server do
       Enum.reduce(process_info, process_info, fn
         {shell_pid, shell_config}, process_info when is_pid(shell_pid) ->
           activity_queue = create_activity_queue(shell_config, true)
-          activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)
+          unmapped_keys = Map.get(process_info, :show_unmapped_keys, false)
+          activity_pid = keystroke_activity_monitor(shell_parent_node, navigation, unmapped_keys)
           Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
 
         _, process_info ->
@@ -413,7 +415,8 @@ defmodule IExHistory2.Events.Server do
       store_count = IExHistory2.Store.open_store(store_name, shell_config.store_filename, scope, store_count)
       Node.monitor(shell_config.node, true)
       Process.monitor(shell_pid)
-      activity_pid = keystroke_activity_monitor(shell_parent_node, navigation)
+      unmapped_keys = Map.get(process_info, :show_unmapped_keys, false)
+      activity_pid = keystroke_activity_monitor(shell_parent_node, navigation, unmapped_keys)
       :erlang.trace_pattern(:receive, @trace_pattern, [])
       activity_queue = create_activity_queue(shell_config, key_buffer_history)
       new_process_info = Map.put(process_info, shell_pid, %{shell_config | queue: activity_queue, keystroke_monitor_pid: activity_pid})
@@ -424,7 +427,7 @@ defmodule IExHistory2.Events.Server do
     end
   end
 
-  defp keystroke_activity_monitor(remote_node, navigation) do
+  defp keystroke_activity_monitor(remote_node, navigation, unmapped_keys) do
     dest = self()
     {mod, bin, _file} = :code.get_object_code(__MODULE__)
     :rpc.call(remote_node, :code, :load_binary, [mod, :nofile, bin])
@@ -433,7 +436,9 @@ defmodule IExHistory2.Events.Server do
       remote_node,
       fn ->
         :erlang.trace(Process.whereis(:user_drv), true, [:send, :receive])
-        do_keystroke_activity_monitor(dest, navigation)
+        :erlang.trace_pattern(:receive, @trace_pattern, [])
+        :erlang.trace_pattern(:send, @trace_pattern, [])
+        do_keystroke_activity_monitor(dest, navigation, unmapped_keys)
       end
     )
   end
@@ -443,34 +448,42 @@ defmodule IExHistory2.Events.Server do
                                              enter: enter, 
                                              editor: editor,
                                              modify: modify,
-                                             abandon: abandon} = keys) do
+                                             abandon: abandon} = keys, unmapped_keys) do
     receive do
       {_, pid, :receive, {_, {:data, ^up}}} ->
         send(dest, {:up_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
 
       {_, pid, :receive, {_, {:data, ^down}}} ->
         send(dest, {:down_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
 
       {_, pid, :receive, {_, {:data, ^editor}}} ->
         send(dest, {:editor_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
 
       {_, pid, :receive, {_, {:data, ^modify}}} ->
         send(dest, {:modify_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
-                
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
+
+      {_, pid, :receive, {_, {:data, @default_modify}}} ->
+        send(dest, {:modify_key, pid})
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
+      
       {_, pid, :receive, {_, {:data, ^abandon}}} ->
         send(dest, {:abandon_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
                 
       {_, pid, :receive, {_, {:data, ^enter}}} ->
         send(dest, {:enter_key, pid})
-        do_keystroke_activity_monitor(dest, keys)
-        
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys) 
+
+      {_, _, :receive, {_, {:data, key}}} when unmapped_keys ->
+        IO.inspect(key)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys) 
+                
       _ ->
-        do_keystroke_activity_monitor(dest, keys)
+        do_keystroke_activity_monitor(dest, keys, unmapped_keys)
     end
   end
 
@@ -535,6 +548,10 @@ defmodule IExHistory2.Events.Server do
     send(user_driver, {user_driver_group, {:requests, [{:move_line, -1}]}})
   end
 
+  defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, :delete_left) do
+    send(user_driver, {user_driver_group, {:requests, [{:delete_chars, -1}]}})
+  end
+  
   defp send_to_shell(%{user_driver: user_driver, user_driver_group: user_driver_group}, command) do
     send(user_driver_group, {user_driver, {:data, String.replace(command, ~r/\s+/, " ")}})
   end
@@ -583,15 +600,15 @@ defmodule IExHistory2.Events.Server do
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", paste_buffer: "", last_direction: :none}}
   end
 
-  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command} = shell_config, process_info, :modify)
-       when byte_size(command) > 0 do
+  defp handle_cursor_action(shell_pid, %{queue: {_, queue}, last_scan_command: command, last_direction: last_dir} = shell_config, process_info, :modify)
+       when byte_size(command) > 0 and last_dir in [:up, :down] do
     send_to_shell(shell_config, "", :scan_action)
     send_to_shell(shell_config, command)
     %{process_info | shell_pid => %{shell_config | queue: {0, queue}, last_scan_command: "", last_direction: :none}}
   end
 
-  defp handle_cursor_action(_, _, process_info, :modify) do
-    process_info
+  defp handle_cursor_action(shell_pid, shell_config, process_info, :modify) do
+    %{process_info | shell_pid => %{shell_config | last_direction: :none}}
   end
 
   defp handle_cursor_action(shell_pid, %{queue: {_, queue}, server_pid: server_pid, last_scan_command: command, paste_buffer: ""} = shell_config, process_info, :editor) do
@@ -647,7 +664,7 @@ defmodule IExHistory2.Events.Server do
     %{shell_config | queue: {search_pos, queue}, last_direction: :none, last_scan_command: command}
   end
 
-  defp do_handle_cursor_action(search_pos, %{queue: {pos, queue}} = shell_config, :up) when pos < length(queue)-1 do
+  defp do_handle_cursor_action(search_pos, %{queue: {pos, queue}} = shell_config, :up) when pos < (length(queue) - 1) do
     command = Enum.at(queue, search_pos)
     send_to_shell(shell_config, command, :scan_action)
     %{shell_config | queue: {search_pos, queue}, last_direction: :up, last_scan_command: command}
@@ -772,8 +789,9 @@ defmodule IExHistory2.Events.Server do
     case Code.string_to_quoted(fun_string) do
       {:ok, {:def, _, [{fun, _, args} | _]}} ->
         key = {Atom.to_string(fun), Enum.count(args)} 
-        Map.get_and_update(solo_functions, key, fn 
-                  mod -> if not is_nil(mod), do: {mod, mod}, else: {new_module, new_module}  
+        Map.get_and_update(solo_functions, key,
+               fn mod when not is_nil(mod) -> {mod, mod} 
+                  _ -> {new_module, new_module}  
         end)
       _ ->
         {new_module, solo_functions}     
